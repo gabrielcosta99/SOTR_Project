@@ -1,0 +1,30 @@
+RTDB é apenas um conceito. Vamos criar uma estrutura de dados que vai guardar por exemplo a temperatura, os dados do compressor
+(e outras coisas) de um ar condicionado.
+Vamos entao ter varias threads, cada uma vai criar os seus dados e cada uma vai guardá-los na RTDB.
+
+TODO:
+Low-pass filtering (e.g., to remove noise from the signal).
+    This is a simple task that removes frequencies above a certain threshold. 
+    It should be fast and run periodically with a reasonably short period (e.g., every 100 ms).
+
+Measuring Speed:
+    In this task, you should analyze the sound signal to determine the most powerful frequency 
+(the frequency with the largest amplitude) and map that to the motor speed. You can assume the motor works in a 
+2-5 kHz range. This task can run more frequently (every 100 ms or faster).
+
+Detecting Bearing Issues:
+    This task looks for low-frequency noise below 200 Hz and checks if its amplitude is more than 20% of the peak 
+frequency’s amplitude. This can indicate a bearing fault.
+    Bearing issues emerge slowly, so this task can run every second or so.
+
+
+No CAB temos de ter uma variavel que guarda o indice onde está o novo valor. 
+Para cada indice, precisamos de um "link counter" que guarda o nº de tasks que estão a usar esse CAB.
+Para escrever, temos de procurar por um indice com o "link counter" a 0, ou seja, um indice que não está a ser usado por ninguem.
+
+    Vamos ter basicamente um init do CAB, vamos alocar memoria equivalente a um certo nº de buffers. Esse buffer vai ter
+um "link counter" a 0 e uma certa quantidade de memoria. O CAB vai ter um indice (NI, por exemplo) onde está o novo valor.
+
+PROBLEMAS:
+    - se usar o FIFO ou o RR no scheduler tenho de usar o sudo. SE usar o sudo, o programa não consegue aceder ao audio device
+    - se usar o SCHED_OTHER, o programa consegue aceder ao audio device mas não sei se o scheduler funciona bem

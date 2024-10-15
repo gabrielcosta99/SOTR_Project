@@ -292,6 +292,59 @@ void *LPFilter(void *arg){
 	filterLP(1000, SAMP_FREQ, gRecordingBuffer, gBufferByteMaxPosition/sizeof(uint16_t)); 
 }
 
+void *MeasuringSpeed(void *arg){
+	int N=0;	// Number of samples to take
+	int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
+	int k=0; 	// General counter
+	uint16_t * sampleVector = (uint16_t *)gRecordingBuffer; // Vector of samples 
+	float * fk; /* Pointer to array with frequencies */
+	float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
+	complex double * x; /* Pointer to array of complex values for samples and FFT */
+
+	printf("\nComputing FFT of signal\n");
+	
+	/* Get the vector size, making sure it is a power of two */
+	for(N=1; pow(2,N) < (SAMP_FREQ*sampleDurationMS)/1000; N++);
+	N--;
+	N=(int)pow(2,N);
+	
+	printf("# of samples is: %d\n",N);
+	
+	/* Allocate memory for  samples, frequency and amplitude vectors */
+	x = (complex double *)malloc(N * sizeof(complex double)); /* Array for samples and FFT output */
+	fk = (float *)malloc(N * sizeof(float)); 	/* Array with frequencies */
+	Ak = (float *)malloc(N * sizeof(float)); 	/* Array with amplitude for frequency fk[i] */
+			
+	/* Copy samples to complex input vector */
+	for(k=0; k<N;k++) {
+		x[k] = sampleVector[k];
+	}
+			
+	/* Compute FFT */
+	fftCompute(x, N);
+
+	//printf("\nFFT result:\n");/		
+	//printComplexArray(x, N);
+
+	/* Compute the amplitude at each frequency and print it */
+	fftGetAmplitude(x,N,SAMP_FREQ, fk,Ak);
+
+	double maxAmplitude = 0.0;
+	double maxAmplitudeFreq = 0.0;
+	for(k=0; k<=N/2; k++) {
+		if (Ak[k] > maxAmplitude){
+			maxAmplitude = Ak[k];
+			maxAmplitudeFreq = fk[k];
+		}
+		printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
+	}
+	printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
+}
+
+void *BearingIssues(void *arg){
+	
+}
+
 
 /* ***************************************
  * Main 
@@ -314,7 +367,7 @@ int main(int argc, char ** argv)
 	pthread_t threadid[nthreads];
 	struct sched_param parm;
 	pthread_attr_t attr[nthreads];
-	int prio[nthreads]={50,50,50,50};
+	int prio[]={50,50,50,50};
 
 	/* Create periodic thread/task with RT scheduling attributes*/
 	for(int i = 0; i < nthreads; i++){
@@ -322,7 +375,7 @@ int main(int argc, char ** argv)
 		pthread_attr_setinheritsched(&attr[i], PTHREAD_EXPLICIT_SCHED);
 		pthread_attr_setschedpolicy(&attr[i], SCHED_OTHER);
 		parm.sched_priority = prio[i];
-		pthread_attr_setschedparam(&attr, &parm);
+		pthread_attr_setschedparam(&attr[i], &parm);
 	}
 	
 	/* SDL Init */
@@ -484,9 +537,14 @@ int main(int argc, char ** argv)
 #ifdef GENSINE
 	// printf("\n Generating a sine wave \n");
 	// genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */	
-	err = pthread_create(&threadid, &attr, Sound_gen, NULL);
+	err = pthread_create(&threadid[0], &attr[0], Sound_gen, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread [%s]", strerror(err));
+	///////
+	err=pthread_join(threadid[0], NULL);
+	if(err != 0)
+		printf("\n\r Error joining Thread [%s]", strerror(err));
+	///////
 #endif
 
 //#define ADDECHO
@@ -502,11 +560,7 @@ int main(int argc, char ** argv)
 	/* For debug															*/ 
 	/* Getting max-min can be usefull to detect possible saturation 		*/
 	{
-		///////
-		err=pthread_join(threadid, NULL);
-		if(err != 0)
-			printf("\n\r Error joining Thread [%s]", strerror(err));
-		///////
+		
 		uint32_t max, min;
 		getMaxMinU16(gRecordingBuffer,gBufferByteMaxPosition/sizeof(uint16_t), &max, &min);
 		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
@@ -526,52 +580,29 @@ int main(int argc, char ** argv)
 #ifdef LPFILTER
 	/* Apply LP filter */
 	/* Args are cutoff freq, sampling freq, buffer and # of samples in the buffer */
-	printf("\n Applying LP filter \n");
-	filterLP(1000, SAMP_FREQ, gRecordingBuffer, gBufferByteMaxPosition/sizeof(uint16_t)); 
+	// printf("\n Applying LP filter \n");
+	// filterLP(1000, SAMP_FREQ, gRecordingBuffer, gBufferByteMaxPosition/sizeof(uint16_t)); 
+	err = pthread_create(&threadid[1], &attr[1], LPFilter, NULL);
+	if(err != 0)
+		printf("\n\r Error creating Thread [%s]", strerror(err));
+	err=pthread_join(threadid[1], NULL);
+	if(err != 0)
+		printf("\n\r Error joining Thread [%s]", strerror(err));
 #endif
 
 #define FFT
 #ifdef FFT
 	{		
-		int N=0;	// Number of samples to take
-		int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
-		int k=0; 	// General counter
-		uint16_t * sampleVector = (uint16_t *)gRecordingBuffer; // Vector of samples 
-		float * fk; /* Pointer to array with frequencies */
-		float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
-		complex double * x; /* Pointer to array of complex values for samples and FFT */
-	
-		printf("\nComputing FFT of signal\n");
 		
-		/* Get the vector size, making sure it is a power of two */
-		for(N=1; pow(2,N) < (SAMP_FREQ*sampleDurationMS)/1000; N++);
-		N--;
-		N=(int)pow(2,N);
-		
-		printf("# of samples is: %d\n",N);
-		
-		/* Allocate memory for  samples, frequency and amplitude vectors */
-		x = (complex double *)malloc(N * sizeof(complex double)); /* Array for samples and FFT output */
-		fk = (float *)malloc(N * sizeof(float)); 	/* Array with frequencies */
-		Ak = (float *)malloc(N * sizeof(float)); 	/* Array with amplitude for frequency fk[i] */
-				
-		/* Copy samples to complex input vector */
-		for(k=0; k<N;k++) {
-			x[k] = sampleVector[k];
-		}
-				
-		/* Compute FFT */
-		fftCompute(x, N);
 
-		//printf("\nFFT result:\n");/		
-		//printComplexArray(x, N);
-    
-		/* Compute the amplitude at each frequency and print it */
-		fftGetAmplitude(x,N,SAMP_FREQ, fk,Ak);
+		err = pthread_create(&threadid[2], &attr[2], MeasuringSpeed, NULL);
+		if(err != 0)
+			printf("\n\r Error creating Thread [%s]", strerror(err));
+		err = pthread_join(threadid[2], NULL);
+		if(err != 0)
+			printf("\n\r Error creating Thread [%s]", strerror(err));
 
-		for(k=0; k<=N/2; k++) {
-			printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
-		}
+		
 	}
 	
 #endif

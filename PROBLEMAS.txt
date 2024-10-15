@@ -1,0 +1,1 @@
+Na thread "MeasuringSpeed", o calculo da frequencia mais alta nao esta feito da maneira que o stor quer

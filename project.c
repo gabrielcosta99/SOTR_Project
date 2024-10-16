@@ -224,7 +224,24 @@ void filterLP(uint32_t cof, uint32_t sampleFreq, uint8_t * buffer, uint32_t nSam
  *      Frequency in Hz, durationMS in miliseconds, amplitude 0...0xFFFF, stream buffer 
  * 
  * *************************************************************************************/ 
-void genSineU16(uint16_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer)
+// void genSineU16(uint16_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer)
+// {	
+// 	int i=0, nSamples=0;
+		
+// 	float sinArgK = 2*M_PI*freq;				/* Compute once constant part of sin argument, for efficiency */
+	
+// 	uint16_t * bufU16 = (uint16_t *)buffer; 	/* UINT16 pointer to buffer for access sample by sample */
+	
+// 	nSamples = ((float)durationMS / 1000) * SAMP_FREQ; 	/* Compute how many samples to generate */
+			
+// 	/* Generate sine wave */
+// 	for(i = 0; i < nSamples; i++) {
+// 		bufU16[i] = amp/2*(1+sin((sinArgK*i)/SAMP_FREQ));		
+// 	}		
+	
+// 	return;
+// }
+void genSine(uint32_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer)
 {	
 	int i=0, nSamples=0;
 		
@@ -281,7 +298,8 @@ void *Sound_gen(void *arg){
 	struct sched_param parm; // To get thread priority
 	
 	printf("\n Generating a sine wave \n");
-	genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */
+	// genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */
+	genSine(4000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */
 }
 
 void *LPFilter(void *arg){
@@ -331,12 +349,22 @@ void *MeasuringSpeed(void *arg){
 
 	double maxAmplitude = 0.0;
 	double maxAmplitudeFreq = 0.0;
-	for(k=0; k<=N/2; k++) {
-		if (Ak[k] > maxAmplitude){
-			maxAmplitude = Ak[k];
-			maxAmplitudeFreq = fk[k];
+	double minMotorFreq = 2000.0;
+	double maxMotorFreq = 5000.0;
+
+	// 	Divided minMotorFreq by 11 because the samples appear with a difference of 11 most of the times. 
+	// The others, appear with a difference of 10.
+	// This way, when we iterate through the this smaller part of the lsit, we will ignore less data than when we would 
+	// iterate through the whole list (1948 Hz - 5383 Hz instead of 0 Hz - 22050Hz)
+	for(k=minMotorFreq/11; k<=maxMotorFreq/10; k++) {	
+		if(fk[k] >= minMotorFreq && fk[k] <= maxMotorFreq){
+			if (Ak[k] > maxAmplitude){
+				maxAmplitude = Ak[k];
+				maxAmplitudeFreq = fk[k];
+			}
+			printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
 		}
-		printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
+		
 	}
 	printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
 }

@@ -1,1 +1,2 @@
-Na thread "MeasuringSpeed", o calculo da frequencia mais alta nao esta feito da maneira que o stor quer
+Na thread "MeasuringSpeed", não sei é suposto só calcularmos a maxima amplitude entre 2kHz e 5kHz ou se é suposto vermos SE 
+a máxima amplitude está entre 2kHz e 5kHz.

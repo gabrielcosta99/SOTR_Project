@@ -87,7 +87,7 @@ typedef struct {
     buffer **buffers;   // Array of pointers to buffer slots
     int current_index; // Index of the most recent message
 	int users; // Number of users
-    pthread_mutex_t lock; // Synchronization lock
+    // pthread_mutex_t lock; // Synchronization lock
 } CAB;
 
 // Initialize CAB
@@ -95,36 +95,50 @@ CAB* open_cab(Uint32 buffer_size, int num_buffers) {
     CAB* cab = malloc(sizeof(CAB));
     cab->buffer_size = buffer_size;
     cab->num_buffers = num_buffers;
-    cab->buffers = malloc(num_buffers * sizeof(void*));
+    // cab->buffers = malloc(num_buffers * sizeof(void*));
+    cab->buffers = malloc(num_buffers * sizeof(buffer));
 
     // Initialize buffers
     for (int i = 0; i < num_buffers; i++) {
         cab->buffers[i] = malloc(buffer_size);
 		cab->buffers[i]->data = malloc(buffer_size);
+		cab->buffers[i]->users = 0;
     }
     cab->current_index = -1; // No message yet
-    pthread_mutex_init(&cab->lock, NULL);
+    // pthread_mutex_init(&cab->lock, NULL);
     return cab;
 }
 
 // Write to a buffer in the CAB
 void CAB_write(CAB* cab, void* data, int size) {
-	pthread_mutex_lock(&cab->lock);
-	cab->current_index = (cab->current_index + 1) % cab->num_buffers;
-	memcpy(cab->buffers[cab->current_index], data, size);
-	pthread_mutex_unlock(&cab->lock);
+	// pthread_mutex_lock(&cab->lock);
+	printf("WRITING\n");
+	int current_index = -1;
+	for(int i = 0; i < cab->num_buffers; i++){
+		if(cab->buffers[i]->users == 0){
+			current_index = i;
+			break;
+		}
+	}
+	// cab->current_index = (cab->current_index + 1) % cab->num_buffers;
+	if(current_index == -1)
+		printf("Failed to find an available buffer\n");
+	// cab->buffers[current_index]->data = data;
+	memcpy(cab->buffers[current_index]->data, data, size);
+	cab -> current_index = current_index;
+	// pthread_mutex_unlock(&cab->lock);
 }
 
-// Read from a buffer in the CAB that does not have the number of user > 0
+// Read from the buffer in the CAB that has the most recent data
 void CAB_read(CAB* cab, uint8_t * data, int size) {
 	int i = cab->current_index;
-	while (cab->buffers[i]->users > 0) {
-		i = (i + 1) % cab->num_buffers;
-	}
+	// while (cab->buffers[i]->users > 0) {
+	// 	i = (i + 1) % cab->num_buffers;
+	// }
+
 	cab->buffers[i]->users++;
 	//printf("Buffer %d has %d users\n", i, cab->buffers[i]->users);
 	memcpy(data, cab->buffers[i]->data, size);
-	
 	cab->buffers[i]->users--; // Decrement the user count after reading
 }
 
@@ -418,7 +432,6 @@ void *LPFilter(void *arg){
 }
 
 void *MeasuringSpeed(void *arg){
-
 	uint8_t tempBuffer[cab.buffer_size];  // Temporary buffer to store data
 	CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
 
@@ -711,7 +724,7 @@ int main(int argc, char ** argv)
 		
 		uint32_t max, min;
 		//get max and min amplitude of the signal form the current buffer in the cab
-		getMaxMinU16(cab.buffers[cab.current_index], cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
+		getMaxMinU16((uint8_t *)cab.buffers[cab.current_index], cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
 		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
 		// contents of the buffer
 		//printSamplesU16(cab.buffers[cab.current_index], 1000);

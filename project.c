@@ -64,6 +64,7 @@ int gRecordingDeviceCount = 0;
 
 char y;
 
+double motorSpeed = 0.0;
 /* ************************************************************** 
  * Callback issued by the capture device driver. 
  * Args are:
@@ -279,7 +280,7 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
 	for(i = 1; i < nSamples; i++) {		
 		if(origBuffer[i] > *max)
 			*max=origBuffer[i];
-		if(origBuffer[i] < *min)
+		if(origBuffer[i] < *min)<
 			*min=origBuffer[i];		
 	}
 	
@@ -367,10 +368,63 @@ void *MeasuringSpeed(void *arg){
 		
 	}
 	printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
+	motorSpeed = maxAmplitudeFreq;
+
+	free(x);
+	free(fk);
+	free(Ak);
 }
 
 void *BearingIssues(void *arg){
+	int N=0;	// Number of samples to take
+	int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
+	int k=0; 	// General counter
+	uint16_t * sampleVector = (uint16_t *)gRecordingBuffer; // Vector of samples 
+	float * fk; /* Pointer to array with frequencies */
+	float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
+	complex double * x; /* Pointer to array of complex values for samples and FFT */
 	
+	/* Get the vector size, making sure it is a power of two */
+	for(N=1; pow(2,N) < (SAMP_FREQ*sampleDurationMS)/1000; N++);
+	N--;
+	N=(int)pow(2,N);
+	
+	/* Allocate memory for  samples, frequency and amplitude vectors */
+	x = (complex double *)malloc(N * sizeof(complex double)); /* Array for samples and FFT output */
+	fk = (float *)malloc(N * sizeof(float)); 	/* Array with frequencies */
+	Ak = (float *)malloc(N * sizeof(float)); 	/* Array with amplitude for frequency fk[i] */
+			
+	/* Copy samples to complex input vector */
+	for(k=0; k<N;k++) {
+		x[k] = sampleVector[k];
+	}
+			
+	/* Compute FFT */
+	fftCompute(x, N);
+
+
+	/* Compute the amplitude at each frequency and print it */
+	fftGetAmplitude(x,N,SAMP_FREQ, fk,Ak);
+
+	// Store the highest amplitude
+	double maxAmplitude = 0.0;
+	for(k=1;k<N/2;k++){
+		if(Ak[k]>maxAmplitude)
+			maxAmplitude=Ak[k];
+	}
+	
+	// check if there is frequencies below 200Hz that have an amplitude bigger than the highest amplitude
+	for(k=1; k<=N/2; k++) {	
+		if(fk[k] > 200.0)
+			break;
+		if(Ak[k] > 0.2*maxAmplitude){
+			printf("Bearing issue detected at %f with amplitude: %f with maxAmplitude: %f\n",fk[k],Ak[k],maxAmplitude);
+		}
+	}
+	
+	free(x);
+	free(fk);
+	free(Ak);
 }
 
 
@@ -621,18 +675,24 @@ int main(int argc, char ** argv)
 #define FFT
 #ifdef FFT
 	{		
-		
-
 		err = pthread_create(&threadid[2], &attr[2], MeasuringSpeed, NULL);
 		if(err != 0)
 			printf("\n\r Error creating Thread [%s]", strerror(err));
 		err = pthread_join(threadid[2], NULL);
 		if(err != 0)
 			printf("\n\r Error creating Thread [%s]", strerror(err));
-
-		
 	}
 	
+#endif
+
+#define BEARINGISSUES
+#ifdef BEARINGISSUES
+	err = pthread_create(&threadid[3], &attr[3], BearingIssues, NULL);
+	if(err != 0)
+		printf("\n\r Error creating Thread [%s]", strerror(err));
+	err = pthread_join(threadid[3], NULL);
+	if(err != 0)
+		printf("\n\r Error creating Thread [%s]", strerror(err));
 #endif
 	
 	/* *****************************************************************

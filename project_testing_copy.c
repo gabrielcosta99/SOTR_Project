@@ -182,7 +182,9 @@ void audioRecordingCallback(void* userdata, Uint8* stream, int len )
 void audioPlaybackCallback(void* userdata, Uint8* stream, int len )
 {
 	///* Copy buffer with audio samples to stream for playback */
-	memcpy(stream, &gRecordingBuffer[ gBufferBytePosition ], len);
+	uint8_t *tempBuffer[cab.buffer_size];
+	CAB_read(&cab, tempBuffer, cab.buffer_size);
+	memcpy(stream, tempBuffer, len);
 
 	///* Update buffer index */
 	gBufferBytePosition += len;

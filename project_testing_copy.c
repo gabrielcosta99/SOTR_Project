@@ -62,7 +62,8 @@ Uint32 gBufferByteSize = 0;
 Uint32 gBufferBytePosition = 0;
 
 //Maximum position in data buffer for recording
-Uint32 gBufferByteMaxPosition = 0;
+Uint32 bufferMaxPosition = 0; // Uint32 gBufferByteMaxPosition = 0;
+
 
 int gRecordingDeviceCount = 0;
 
@@ -76,7 +77,7 @@ char y;
 
 typedef struct{
 	int users; // Number of users
-	Uint8 *data; // Data buffer
+	uint8_t *data; // Data buffer
 	Uint32 position; // Position in the data buffer
 	Uint32 max_position; // Maximum position in the data buffer
 } buffer;
@@ -102,6 +103,7 @@ CAB* open_cab(Uint32 buffer_size, int num_buffers) {
     for (int i = 0; i < num_buffers; i++) {
         cab->buffers[i] = malloc(buffer_size);
 		cab->buffers[i]->data = malloc(buffer_size);
+		memset(cab->buffers[i]->data, 0, buffer_size);
 		cab->buffers[i]->users = 0;
     }
     cab->current_index = -1; // No message yet
@@ -164,10 +166,12 @@ CAB cab;
 void audioRecordingCallback(void* userdata, Uint8* stream, int len )
 {
 	/* Copy bytes acquired from audio stream */
-	memcpy(&gRecordingBuffer[ gBufferBytePosition ], stream, len);
+	// memcpy(&gRecordingBuffer[ gBufferBytePosition ], stream, len);
 
+	// WE NEED TO CHANGE THIS
+	memcpy(&cab.buffers[0]->data[cab.buffers[0]->position], stream, len);
 	/* Update buffer pointer */
-	gBufferBytePosition += len;
+	cab.buffers[0]->position += len;
 }
 
 /* *********************************************************************************** 
@@ -181,13 +185,15 @@ void audioRecordingCallback(void* userdata, Uint8* stream, int len )
  * **********************************************************************************/
 void audioPlaybackCallback(void* userdata, Uint8* stream, int len )
 {
+	// THERE IS SOMETHING WRONG WITH CAB_READ
 	///* Copy buffer with audio samples to stream for playback */
-	uint8_t *tempBuffer[cab.buffer_size];
-	CAB_read(&cab, tempBuffer, cab.buffer_size);
-	memcpy(stream, tempBuffer, len);
+	// uint8_t *tempBuffer;
+	// CAB_read(&cab, tempBuffer, cab.buffer_size);
+	memcpy(stream, &cab.buffers[0]->data[cab.buffers[0]->position], len);
 
 	///* Update buffer index */
-	gBufferBytePosition += len;
+	// WE NEED TO CHANGE THIS
+	cab.buffers[0]->position += len;
 }
 
 
@@ -399,14 +405,16 @@ void *Sound_gen(void *arg){
 	//printf("\n Generating a sine wave \n");
 	// genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */
 	//printf("temp buffer\n");
-	uint8_t tempBuffer[cab.buffer_size];  // 
+
+	Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
+
 	//printf("ABUFSIZE_SAMPLES: %lu\n", 44100 * sizeof(uint16_t));
 	//printf("genSine\n");
 	genSine(4000, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
 	//printf("CAB_write\n");
 	
 	CAB_write(&cab, tempBuffer, cab.buffer_size);  // Write the sound data to the CAB
-
+	free(tempBuffer);
 	printf("Task 'Sound_gen': done.\n");
 
 	return NULL;
@@ -419,23 +427,23 @@ void *LPFilter(void *arg){
 	struct sched_param parm; // To get thread priority
 	printf("\n Applying LP filter \n");
 	
-	uint8_t tempBuffer[cab.buffer_size];  // Temporary buffer to store data 
-	printf("CAB_read\n");
-	CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
+	// ESTA PARTE ESTÁ A FUNCIONAR MAL
+	// Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // Temporary buffer to store data 
+	// printf("CAB_read\n");
+	// CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
 
 	// content of the buffer
 	//printf("LPFilter\n");
 	//printSamplesU16(tempBuffer, 1000);
 
 
-	filterLP(1000, SAMP_FREQ, tempBuffer, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
-
+	filterLP(1000, SAMP_FREQ, cab.buffers[0]->data, bufferMaxPosition/sizeof(uint16_t));  // Apply the LP filter 
 
 }
 
 void *MeasuringSpeed(void *arg){
-	uint8_t tempBuffer[cab.buffer_size];  // Temporary buffer to store data
-	CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
+	// Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // Temporary buffer to store data
+	// CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
 
 	// content of the buffer
 	//printSamplesU16(tempBuffer, 1000);
@@ -443,7 +451,7 @@ void *MeasuringSpeed(void *arg){
 	int N=0;	// Number of samples to take
 	int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
 	int k=0; 	// General counter
-	uint16_t * sampleVector = (uint16_t *)tempBuffer; /* Pointer to the buffer with samples */
+	uint16_t * sampleVector = (uint16_t *)cab.buffers[0]->data; /* Pointer to the buffer with samples */
 	float * fk; /* Pointer to array with frequencies */
 	float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
 	complex double * x; /* Pointer to array of complex values for samples and FFT */
@@ -644,7 +652,7 @@ int main(int argc, char ** argv)
 	/* Calculate max buffer use - some additional space to allow for extra samples*/
 	/* Detection of buffer use is made form device-driver callback, so can be a biffer overrun if some */
 	/* leeway is not added */
-	Uint32 bufferMaxPosition = MAX_RECORDING_SECONDS * bytesPerSecond;
+	bufferMaxPosition = MAX_RECORDING_SECONDS * bytesPerSecond;
 
 	// 
 	cab = *open_cab(size,32);
@@ -726,7 +734,7 @@ int main(int argc, char ** argv)
 		
 		uint32_t max, min;
 		//get max and min amplitude of the signal form the current buffer in the cab
-		getMaxMinU16((uint8_t *)cab.buffers[cab.current_index], cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
+		getMaxMinU16(cab.buffers[cab.current_index]->data, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
 		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
 		// contents of the buffer
 		//printSamplesU16(cab.buffers[cab.current_index], 1000);
@@ -779,8 +787,9 @@ int main(int argc, char ** argv)
 	printf("Playback\n");
 		
 	/* Reset buffer index to the beginning */
-	gBufferBytePosition = 0;
-	
+	// gBufferBytePosition = 0;
+	cab.buffers[0]->position = 0;
+
 	/* Enable processing of callbacks by playback device (required after opening) */
 	SDL_PauseAudioDevice(playbackDeviceId, SDL_FALSE);
 
@@ -791,16 +800,16 @@ int main(int argc, char ** argv)
 		SDL_LockAudioDevice(playbackDeviceId);
 
 		/* Playback is finished? */
-		if(gBufferBytePosition > gBufferByteMaxPosition)
+		if(cab.buffers[0]->position > bufferMaxPosition)
 		{
 			/* Stop playing audio */
 			SDL_PauseAudioDevice(playbackDeviceId, SDL_TRUE);
 			SDL_UnlockAudioDevice(playbackDeviceId);	
 			break;
 		}
-
 		/* Unlock callback and try again ...*/
 		SDL_UnlockAudioDevice(playbackDeviceId);
+
 	}
 
 	/* *******************************************

@@ -280,7 +280,7 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
 	for(i = 1; i < nSamples; i++) {		
 		if(origBuffer[i] > *max)
 			*max=origBuffer[i];
-		if(origBuffer[i] < *min)<
+		if(origBuffer[i] < *min)
 			*min=origBuffer[i];		
 	}
 	

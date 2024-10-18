@@ -132,19 +132,21 @@ void CAB_write(CAB* cab, void* data, int size) {
 }
 
 // Read from the buffer in the CAB that has the most recent data
-void CAB_read(CAB* cab, buffer * tempBuffer, int size) {
+void CAB_read(CAB* cab, uint8_t *tempBuffer, int size) {
 	int i = cab->current_index;
-	// while (cab->buffers[i]->users > 0) {
-	// 	i = (i + 1) % cab->num_buffers;
-	// }
-
 	cab->buffers[i]->users++;
-	//printf("Buffer %d has %d users\n", i, cab->buffers[i]->users);
-	memcpy(tempBuffer, cab->buffers[i], sizeof(buffer));
+	memcpy(tempBuffer, cab->buffers[i]->data, sizeof(buffer));
 	cab->buffers[i]->users--; // Decrement the user count after reading
 }
 
-
+// Cleanup CAB
+void delete_cab(CAB* cab) {
+    for (int i = 0; i < cab->num_buffers; i++) {
+        free(cab->buffers[i]);
+    }
+    free(cab->buffers);
+    free(cab);
+}
 
 CAB cab;
 
@@ -437,31 +439,24 @@ void *LPFilter(void *arg){
 	struct sched_param parm; // To get thread priority
 	printf("\n Applying LP filter \n");
 	
-	// ESTA PARTE ESTÁ A FUNCIONAR MAL
-	// Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // Temporary buffer to store data 
-	// printf("CAB_read\n");
-	// CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
-
-	// content of the buffer
-	//printf("LPFilter\n");
-	//printSamplesU16(tempBuffer, 1000);
-
-
-	filterLP(1000, SAMP_FREQ, cab.buffers[0]->data, bufferMaxPosition/sizeof(uint16_t));  // Apply the LP filter 
-
+	
+	// TODO memcopy não esta a funcionar
+	int i = cab.current_index;
+	cab.buffers[i]->users++;
+	filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
+	cab.buffers[i]->users--; // Decrement the user count after reading
 }
 
 void *MeasuringSpeed(void *arg){
-	// Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // Temporary buffer to store data
-	// CAB_read(&cab, tempBuffer, cab.buffer_size);  // Read the sound data from the CAB
+	// TODO memcopy não esta a funcionar
+	int i = cab.current_index;
+	cab.buffers[i]->users++;
 
-	// content of the buffer
-	//printSamplesU16(tempBuffer, 1000);
 
 	int N=0;	// Number of samples to take
 	int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
 	int k=0; 	// General counter
-	uint16_t * sampleVector = (uint16_t *)cab.buffers[0]->data; /* Pointer to the buffer with samples */
+	uint16_t * sampleVector = (uint16_t *)cab.buffers[i]->data; /* Pointer to the buffer with samples */
 	float * fk; /* Pointer to array with frequencies */
 	float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
 	complex double * x; /* Pointer to array of complex values for samples and FFT */
@@ -514,6 +509,7 @@ void *MeasuringSpeed(void *arg){
 		
 	}
 	printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
+	cab.buffers[i]->users--;
 }
 
 void *BearingIssues(void *arg){
@@ -764,8 +760,6 @@ int main(int argc, char ** argv)
 #ifdef LPFILTER
 	/* Apply LP filter */
 	/* Args are cutoff freq, sampling freq, buffer and # of samples in the buffer */
-	// printf("\n Applying LP filter \n");
-	// filterLP(1000, SAMP_FREQ, gRecordingBuffer, gBufferByteMaxPosition/sizeof(uint16_t)); 
 	err = pthread_create(&threadid[1], &attr[1], LPFilter, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread [%s]", strerror(err));
@@ -777,7 +771,6 @@ int main(int argc, char ** argv)
 #define FFT
 #ifdef FFT
 	{		
-		
 
 		err = pthread_create(&threadid[2], &attr[2], MeasuringSpeed, NULL);
 		if(err != 0)
@@ -798,7 +791,8 @@ int main(int argc, char ** argv)
 		
 	/* Reset buffer index to the beginning */
 	// gBufferBytePosition = 0;
-	cab.buffers[0]->position = 0;
+	int i = cab.current_index;
+	cab.buffers[i]->position = 0;
 
 	/* Enable processing of callbacks by playback device (required after opening) */
 	SDL_PauseAudioDevice(playbackDeviceId, SDL_FALSE);
@@ -810,11 +804,11 @@ int main(int argc, char ** argv)
 		SDL_LockAudioDevice(playbackDeviceId);
 
 		/* Playback is finished? */
-		if(cab.buffers[0]->position > bufferMaxPosition)
+		if(cab.buffers[i]->position > bufferMaxPosition)
 		{
 			/* Stop playing audio */
 			SDL_PauseAudioDevice(playbackDeviceId, SDL_TRUE);
-			SDL_UnlockAudioDevice(playbackDeviceId);	
+			SDL_UnlockAudioDevice(playbackDeviceId);
 			break;
 		}
 		/* Unlock callback and try again ...*/
@@ -830,6 +824,7 @@ int main(int argc, char ** argv)
 		free(gRecordingBuffer);
 		gRecordingBuffer = NULL;
 	}
+
 
 	SDL_Quit();
 	

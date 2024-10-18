@@ -132,7 +132,7 @@ void CAB_write(CAB* cab, void* data, int size) {
 }
 
 // Read from the buffer in the CAB that has the most recent data
-void CAB_read(CAB* cab, uint8_t * data, int size) {
+void CAB_read(CAB* cab, buffer * tempBuffer, int size) {
 	int i = cab->current_index;
 	// while (cab->buffers[i]->users > 0) {
 	// 	i = (i + 1) % cab->num_buffers;
@@ -140,7 +140,7 @@ void CAB_read(CAB* cab, uint8_t * data, int size) {
 
 	cab->buffers[i]->users++;
 	//printf("Buffer %d has %d users\n", i, cab->buffers[i]->users);
-	memcpy(data, cab->buffers[i]->data, size);
+	memcpy(tempBuffer, cab->buffers[i], sizeof(buffer));
 	cab->buffers[i]->users--; // Decrement the user count after reading
 }
 
@@ -187,13 +187,23 @@ void audioPlaybackCallback(void* userdata, Uint8* stream, int len )
 {
 	// THERE IS SOMETHING WRONG WITH CAB_READ
 	///* Copy buffer with audio samples to stream for playback */
-	// uint8_t *tempBuffer;
-	// CAB_read(&cab, tempBuffer, cab.buffer_size);
-	memcpy(stream, &cab.buffers[0]->data[cab.buffers[0]->position], len);
+
+	int i = cab.current_index;
+	// while (cab->buffers[i]->users > 0) {
+	// 	i = (i + 1) % cab->num_buffers;
+	// }
+
+	cab.buffers[i]->users++;
+	//printf("Buffer %d has %d users\n", i, cab->buffers[i]->users);
+	memcpy(stream, &cab.buffers[i]->data[cab.buffers[i]->position], len);
+	// memcpy(stream, &cab.buffers[0]->data[cab.buffers[0]->position], len);
 
 	///* Update buffer index */
 	// WE NEED TO CHANGE THIS
-	cab.buffers[0]->position += len;
+	cab.buffers[i]->position += len;
+	cab.buffers[i]->users--; // Decrement the user count after reading
+	
+	
 }
 
 

@@ -128,14 +128,15 @@ void CAB_write(CAB* cab, void* data, int size) {
 	// cab->buffers[current_index]->data = data;
 	memcpy(cab->buffers[current_index]->data, data, size);
 	cab -> current_index = current_index;
+	cab -> buffers[current_index]->position = 0;
 	// pthread_mutex_unlock(&cab->lock);
 }
 
 // Read from the buffer in the CAB that has the most recent data
-void CAB_read(CAB* cab, uint8_t *tempBuffer, int size) {
+void CAB_read(CAB* cab, buffer *tempBuffer, int size) {
 	int i = cab->current_index;
 	cab->buffers[i]->users++;
-	memcpy(tempBuffer, cab->buffers[i]->data, sizeof(buffer));
+	memcpy(tempBuffer, cab->buffers[i], sizeof(buffer));
 	cab->buffers[i]->users--; // Decrement the user count after reading
 }
 
@@ -441,22 +442,29 @@ void *LPFilter(void *arg){
 	
 	
 	// TODO memcopy não esta a funcionar
-	int i = cab.current_index;
-	cab.buffers[i]->users++;
-	filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
-	cab.buffers[i]->users--; // Decrement the user count after reading
+
+	// int i = cab.current_index;
+	// cab.buffers[i]->users++;
+	// filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
+	// cab.buffers[i]->users--; // Decrement the user count after reading
+
+	buffer tempBuffer;
+	CAB_read(&cab,&tempBuffer,0);
+	filterLP(1000, SAMP_FREQ, tempBuffer.data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
 }
 
 void *MeasuringSpeed(void *arg){
 	// TODO memcopy não esta a funcionar
-	int i = cab.current_index;
-	cab.buffers[i]->users++;
+	// int i = cab.current_index;
+	// cab.buffers[i]->users++;
 
+	buffer tempBuffer;
+	CAB_read(&cab,&tempBuffer,0);
 
 	int N=0;	// Number of samples to take
 	int sampleDurationMS = 100; /* Duration of the sample to analyze, in ms */
 	int k=0; 	// General counter
-	uint16_t * sampleVector = (uint16_t *)cab.buffers[i]->data; /* Pointer to the buffer with samples */
+	uint16_t * sampleVector = (uint16_t *)tempBuffer.data; /* Pointer to the buffer with samples */
 	float * fk; /* Pointer to array with frequencies */
 	float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
 	complex double * x; /* Pointer to array of complex values for samples and FFT */
@@ -509,7 +517,7 @@ void *MeasuringSpeed(void *arg){
 		
 	}
 	printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
-	cab.buffers[i]->users--;
+	// cab.buffers[i]->users--;
 }
 
 void *BearingIssues(void *arg){

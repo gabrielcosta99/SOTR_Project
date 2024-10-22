@@ -21,6 +21,7 @@
 * 	https://wiki.libsdl.org/SDL2/FrontPage
  * *************************************************************************/
 #include <SDL.h>
+#include <bits/pthreadtypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,6 +97,8 @@ typedef struct{
 	uint8_t *data; // Data buffer
 	Uint32 position; // Position in the data buffer
 	Uint32 max_position; // Maximum position in the data buffer
+	pthread_mutex_t lock; // Synchronization lock
+	pthread_cond_t cond; // Condition variable
 } buffer;
 
 typedef struct {
@@ -121,6 +124,8 @@ CAB* open_cab(Uint32 buffer_size, int num_buffers) {
 		cab->buffers[i]->data = malloc(buffer_size);
 		memset(cab->buffers[i]->data, 0, buffer_size);
 		cab->buffers[i]->users = 0;
+		pthread_mutex_init(&cab->buffers[i]->lock, NULL);
+		pthread_cond_init(&cab->buffers[i]->cond, NULL);
     }
     cab->current_index = -1; // No message yet
     // pthread_mutex_init(&cab->lock, NULL);
@@ -151,9 +156,14 @@ void CAB_write(CAB* cab, void* data, int size) {
 // Read from the buffer in the CAB that has the most recent data
 void CAB_read(CAB* cab, buffer *tempBuffer, int size) {
 	int i = cab->current_index;
+	pthread_mutex_lock(&cab->buffers[i]->lock);
 	cab->buffers[i]->users++;
+	pthread_mutex_unlock(&cab->buffers[i]->lock);
 	memcpy(tempBuffer, cab->buffers[i], sizeof(buffer));
+	pthread_mutex_lock(&cab->buffers[i]->lock);
 	cab->buffers[i]->users--; // Decrement the user count after reading
+	pthread_mutex_unlock(&cab->buffers[i]->lock);
+	
 }
 
 // Cleanup CAB
@@ -172,6 +182,28 @@ CAB cab;
  * ***************************************/
 
 
+/* ***************************************
+ * Data-Base
+ * ***************************************/
+typedef struct {
+	int faultyFreq;
+	int motorFreq;
+	int bearingFreq;
+	int bearingAmplitude;
+	char *name;
+	char *description;
+	int status;
+} real_time_data_base;
+
+real_time_data_base db;
+
+void dbPrint(){
+	printf("faulty frequency: %d\n"
+			"motor frequency: %d\n"
+			"bearing issue frequency: %d\n"
+			"bearing issue amplitude: %d\n"
+			, db.faultyFreq,db.motorFreq,db.bearingFreq,db.bearingAmplitude);
+}
 
 /* ************************************************************** 
  * Callback issued by the capture device driver. 
@@ -587,6 +619,7 @@ void *MeasuringSpeed(void *arg){
 		}
 		printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
 		// cab.buffers[i]->users--;
+		db.motorFreq = maxAmplitudeFreq;
 	}
 }
 
@@ -657,13 +690,18 @@ void *BearingIssues(void *arg){
 			if(fk[k] > 200.0)
 				break;
 			if(Ak[k] > 0.2*maxAmplitude){
-				printf("Bearing issue detected at %f with amplitude: %f with maxAmplitude: %f\n",fk[k],Ak[k],maxAmplitude);
+				//printf("Bearing issue detected at %f with amplitude: %f with maxAmplitude: %f\n",fk[k],Ak[k],maxAmplitude);
+				db.bearingFreq = fk[k];
+				db.bearingAmplitude = Ak[k];
 			}
 		}
 		
 		free(x);
 		free(fk);
 		free(Ak);
+		
+		dbPrint();
+
 	}
 }
 

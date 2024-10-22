@@ -98,7 +98,6 @@ typedef struct{
 	Uint32 position; // Position in the data buffer
 	Uint32 max_position; // Maximum position in the data buffer
 	pthread_mutex_t lock; // Synchronization lock
-	pthread_cond_t cond; // Condition variable
 } buffer;
 
 typedef struct {
@@ -119,12 +118,12 @@ CAB* open_cab(Uint32 buffer_size, int num_buffers) {
 
     // Initialize buffers
     for (int i = 0; i < num_buffers; i++) {
-        cab->buffers[i] = malloc(buffer_size);
+        cab->buffers[i] = malloc(sizeof(buffer));
 		cab->buffers[i]->data = malloc(buffer_size);
 		memset(cab->buffers[i]->data, 0, buffer_size);
 		cab->buffers[i]->users = 0;
+		cab->buffers[i]->max_position = buffer_size;
 		pthread_mutex_init(&cab->buffers[i]->lock, NULL);
-		pthread_cond_init(&cab->buffers[i]->cond, NULL);
     }
     cab->current_index = -1; // No message yet
     // pthread_mutex_init(&cab->lock, NULL);

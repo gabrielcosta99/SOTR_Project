@@ -103,7 +103,6 @@ typedef struct {
     int num_buffers;  // Total number of buffers available in the CAB
     buffer **buffers;   // Array of pointers to buffer slots
     int current_index; // Index of the most recent message
-	int users; // Number of users
     // pthread_mutex_t lock; // Synchronization lock
 } CAB;
 
@@ -453,57 +452,59 @@ void *Sound_gen(void *arg){
 		Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
 
 		genSine(4000, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
-		
+		//get max and min amplitude of the signal form the current buffer in the cab
+		getMaxMinU16(tempBuffer, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
+		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
+
+		filterLP(1000, SAMP_FREQ, tempBuffer, cab.buffer_size/sizeof(uint16_t));
 		CAB_write(&cab, tempBuffer, cab.buffer_size);  // Write the sound data to the CAB
 		free(tempBuffer);
 
-		//get max and min amplitude of the signal form the current buffer in the cab
-		getMaxMinU16(cab.buffers[cab.current_index]->data, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
-		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
+		
 	}
 	
 
 	return NULL;
 }
 
-void *LPFilter(void *arg){
-	/* Delays theread execution start to prevent output of main() and thread to get garbled */
-	usleep(THREAD_INIT_OFFSET);
-	/* Timespec variables to manage time */
-	struct timespec ts, // thread next activation time (absolute)
-			ta, 		// activation time of current thread activation (absolute)
-			tit, 		// thread time from last execution,
-			ta_ant, 	// activation time of last instance (absolute),
-			tp; 		// Thread period
+// void *LPFilter(void *arg){
+// 	/* Delays theread execution start to prevent output of main() and thread to get garbled */
+// 	usleep(THREAD_INIT_OFFSET);
+// 	/* Timespec variables to manage time */
+// 	struct timespec ts, // thread next activation time (absolute)
+// 			ta, 		// activation time of current thread activation (absolute)
+// 			tit, 		// thread time from last execution,
+// 			ta_ant, 	// activation time of last instance (absolute),
+// 			tp; 		// Thread period
 
-	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S-1;	
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	ts = TsAdd(ts,tp);		
+// 	/* Set absolute activation time of first instance */
+// 	tp.tv_nsec = PERIOD_NS;
+// 	tp.tv_sec = PERIOD_S-1;	
+// 	clock_gettime(CLOCK_MONOTONIC, &ts);
+// 	ts = TsAdd(ts,tp);		
 
-	int policy;    // To obtain scheduling policy
-	struct sched_param parm; // To get thread priority
-	buffer tempBuffer;
+// 	int policy;    // To obtain scheduling policy
+// 	struct sched_param parm; // To get thread priority
+// 	buffer tempBuffer;
 	
-	while(1){
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
-		clock_gettime(CLOCK_MONOTONIC, &ta);		
-		ts = TsAdd(ts,tp);	
-		printf("\n Applying LP filter \n");
+// 	while(1){
+// 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
+// 		clock_gettime(CLOCK_MONOTONIC, &ta);		
+// 		ts = TsAdd(ts,tp);	
+// 		printf("\n Applying LP filter \n");
 				
-		// TODO memcopy não esta a funcionar
+// 		// TODO memcopy não esta a funcionar
 
-		// int i = cab.current_index;
-		// cab.buffers[i]->users++;
-		// filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
-		// cab.buffers[i]->users--; // Decrement the user count after reading
+// 		// int i = cab.current_index;
+// 		// cab.buffers[i]->users++;
+// 		// filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
+// 		// cab.buffers[i]->users--; // Decrement the user count after reading
 
 		
-		CAB_read(&cab,&tempBuffer,0);
-		filterLP(1000, SAMP_FREQ, cab.buffers[0]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter
-	} 
-}
+// 		CAB_read(&cab,&tempBuffer,0);
+// 		filterLP(1000, SAMP_FREQ, cab.buffers[0]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter
+// 	} 
+// }
 
 void *MeasuringSpeed(void *arg){
 	/* Delays theread execution start to prevent output of main() and thread to get garbled */
@@ -737,7 +738,7 @@ int main(int argc, char ** argv)
 	int bytesPerSample;							/* Number of bytes each sample requires. Function of size of sample and # of channels */ 
 	int bytesPerSecond;							/* Intuitive. bytes per sample sample * sampling frequency */
 	int err;
-	int nthreads = 5;
+	int nthreads = 4;
 	
 	
 
@@ -745,7 +746,7 @@ int main(int argc, char ** argv)
 	pthread_t threadid[nthreads];
 	struct sched_param parm;
 	pthread_attr_t attr[nthreads];
-	int prio[]={50,50,50,50,50};
+	int prio[]={50,50,50,50};
 
 	/* Create periodic thread/task with RT scheduling attributes*/
 	for(int i = 0; i < nthreads; i++){
@@ -963,9 +964,9 @@ int main(int argc, char ** argv)
 #ifdef LPFILTER
 	/* Apply LP filter */
 	/* Args are cutoff freq, sampling freq, buffer and # of samples in the buffer */
-	err = pthread_create(&threadid[1], &attr[1], LPFilter, NULL);
-	if(err != 0)
-		printf("\n\r Error creating Thread [%s]", strerror(err));
+	// err = pthread_create(&threadid[1], &attr[1], LPFilter, NULL);
+	// if(err != 0)
+	// 	printf("\n\r Error creating Thread [%s]", strerror(err));
 	// err=pthread_join(threadid[1], NULL);
 	// if(err != 0)
 	// 	printf("\n\r Error joining Thread [%s]", strerror(err));
@@ -975,7 +976,7 @@ int main(int argc, char ** argv)
 #ifdef FFT
 	{		
 
-		err = pthread_create(&threadid[2], &attr[2], MeasuringSpeed, NULL);
+		err = pthread_create(&threadid[1], &attr[1], MeasuringSpeed, NULL);
 		if(err != 0)
 			printf("\n\r Error creating Thread [%s]", strerror(err));
 		// err = pthread_join(threadid[2], NULL);
@@ -989,7 +990,7 @@ int main(int argc, char ** argv)
 
 #define BEARINGISSUES
 #ifdef BEARINGISSUES
-	err = pthread_create(&threadid[3], &attr[3], BearingIssues, NULL);
+	err = pthread_create(&threadid[2], &attr[2], BearingIssues, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread [%s]", strerror(err));
 	// err = pthread_join(threadid[3], NULL);
@@ -1028,7 +1029,7 @@ int main(int argc, char ** argv)
 	// 	SDL_UnlockAudioDevice(playbackDeviceId);
 
 	// }
-	err = pthread_create(&threadid[4], &attr[4], Playback, NULL);
+	err = pthread_create(&threadid[3], &attr[3], Playback, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread [%s]", strerror(err));
 	// err=pthread_join(threadid[4], NULL);
@@ -1047,6 +1048,11 @@ int main(int argc, char ** argv)
 
 	// SDL_Quit();
 	while (1);
+	// for(int i=0;i<nthreads;i++){
+	// 	err = pthread_join(threadid[i], NULL);
+	// 	if(err != 0)
+	// 		printf("\n\r Error creating Thread [%s]", strerror(err));
+	// }
 	
 	return 0;
 }

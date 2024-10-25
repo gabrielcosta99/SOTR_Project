@@ -1,5 +1,5 @@
-[] Criar Real-Time Database 
-[] Criar uma thread que dá print aos dados da Real-Time Database
+[x] Criar Real-Time Database 
+[x] Criar uma thread que dá print aos dados da Real-Time Database
 [] Ver as prioridades para cada thread
 [] Ver a periodicidade de cada thread
 [] Criar mais threads

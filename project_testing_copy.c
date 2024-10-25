@@ -133,7 +133,7 @@ CAB* open_cab(Uint32 buffer_size, int num_buffers) {
 // Write to a buffer in the CAB
 void CAB_write(CAB* cab, void* data, int size) {
 	// pthread_mutex_lock(&cab->lock);
-	printf("WRITING\n");
+	//printf("WRITING\n");
 	int current_index = -1;
 	for(int i = 0; i < cab->num_buffers; i++){
 		if(cab->buffers[i]->users == 0){
@@ -195,13 +195,6 @@ typedef struct {
 
 real_time_data_base db;
 
-void dbPrint(){
-	printf("faulty frequency: %d\n"
-			"motor frequency: %d\n"
-			"bearing issue frequency: %d\n"
-			"bearing issue amplitude: %d\n"
-			, db.faultyFreq,db.motorFreq,db.bearingFreq,db.bearingAmplitude);
-}
 
 /* ************************************************************** 
  * Callback issued by the capture device driver. 
@@ -452,6 +445,38 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
  * Threads 
  * ***************************************/
 
+// thread to print the contents of the real-time database
+void *dbPrint(){
+	usleep(THREAD_INIT_OFFSET);
+	struct timespec ts, // thread next activation time (absolute)
+			ta, 		// activation time of current thread activation (absolute)
+			tit, 		// thread time from last execution,
+			ta_ant, 	// activation time of last instance (absolute),
+			tp; 		// Thread period
+
+	/* Set absolute activation time of first instance */
+	tp.tv_nsec = PERIOD_NS;
+	tp.tv_sec = PERIOD_S;	
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	ts = TsAdd(ts,tp);
+
+	while (1) {
+		/* Wait until next cycle */
+		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
+		clock_gettime(CLOCK_MONOTONIC, &ta);		
+		ts = TsAdd(ts,tp);	
+
+		printf("\nReal time DataBase:\n"
+					"faulty frequency: %d\n"
+					"motor frequency: %d\n"
+					"bearing issue frequency: %d\n"
+					"bearing issue amplitude: %d\n\n"
+					, db.faultyFreq,db.motorFreq,db.bearingFreq,db.bearingAmplitude);
+	}
+
+	
+}
+
 // Sound generator thread. This is the Thread that will write in the buffer
 void *Sound_gen(void *arg){
 	/* Timespec variables to manage time */
@@ -478,14 +503,14 @@ void *Sound_gen(void *arg){
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
 		clock_gettime(CLOCK_MONOTONIC, &ta);		
 		ts = TsAdd(ts,tp);	
-		printf("Task 'Sound_gen': initiating...\n");
+		//printf("Task 'Sound_gen': initiating...\n");
 
 		Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
 
 		genSine(4000, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
 		//get max and min amplitude of the signal form the current buffer in the cab
 		getMaxMinU16(tempBuffer, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
-		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
+		//printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
 
 		filterLP(1000, SAMP_FREQ, tempBuffer, cab.buffer_size/sizeof(uint16_t));
 		CAB_write(&cab, tempBuffer, cab.buffer_size);  // Write the sound data to the CAB
@@ -540,9 +565,7 @@ void *Sound_gen(void *arg){
 void *MeasuringSpeed(void *arg){
 	/* Delays theread execution start to prevent output of main() and thread to get garbled */
 	usleep(THREAD_INIT_OFFSET);
-	// TODO memcopy não esta a funcionar
-	// int i = cab.current_index;
-	// cab.buffers[i]->users++;
+
 	struct timespec ts, // thread next activation time (absolute)
 			ta, 		// activation time of current thread activation (absolute)
 			tit, 		// thread time from last execution,
@@ -570,14 +593,14 @@ void *MeasuringSpeed(void *arg){
 		float * Ak; /* Pointer to array with amplitude for frequency fk[i] */
 		complex double * x; /* Pointer to array of complex values for samples and FFT */
 
-		printf("\nComputing FFT of signal\n");
+		//printf("\nComputing FFT of signal\n");
 		
 		/* Get the vector size, making sure it is a power of two */
 		for(N=1; pow(2,N) < (SAMP_FREQ*sampleDurationMS)/1000; N++);
 		N--;
 		N=(int)pow(2,N);
 		
-		printf("# of samples is: %d\n",N);
+		//printf("# of samples is: %d\n",N);
 		
 		/* Allocate memory for  samples, frequency and amplitude vectors */
 		x = (complex double *)malloc(N * sizeof(complex double)); /* Array for samples and FFT output */
@@ -613,11 +636,11 @@ void *MeasuringSpeed(void *arg){
 					maxAmplitude = Ak[k];
 					maxAmplitudeFreq = fk[k];
 				}
-				printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
+				//printf("Amplitude at frequency %f Hz is %f \n", fk[k], Ak[k]);
 			}
 			
 		}
-		printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
+		//printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
 		// cab.buffers[i]->users--;
 		db.motorFreq = maxAmplitudeFreq;
 	}
@@ -644,7 +667,7 @@ void *BearingIssues(void *arg){
 		clock_gettime(CLOCK_MONOTONIC, &ta);		
 		ts = TsAdd(ts,tp);	
 		
-		printf("Bearing issues\n");
+		//printf("Bearing issues\n");
 		CAB_read(&cab,&tempBuffer,0);
 
 		int N=0;	// Number of samples to take
@@ -700,7 +723,6 @@ void *BearingIssues(void *arg){
 		free(fk);
 		free(Ak);
 		
-		dbPrint();
 
 	}
 }
@@ -775,7 +797,7 @@ int main(int argc, char ** argv)
 	int bytesPerSample;							/* Number of bytes each sample requires. Function of size of sample and # of channels */ 
 	int bytesPerSecond;							/* Intuitive. bytes per sample sample * sampling frequency */
 	int err;
-	int nthreads = 4;
+	int nthreads = 5;
 	
 	
 
@@ -783,7 +805,8 @@ int main(int argc, char ** argv)
 	pthread_t threadid[nthreads];
 	struct sched_param parm;
 	pthread_attr_t attr[nthreads];
-	int prio[]={50,50,50,50};
+	int prio[]={50,50,50,50,50};
+
 
 	/* Create periodic thread/task with RT scheduling attributes*/
 	for(int i = 0; i < nthreads; i++){
@@ -868,7 +891,7 @@ int main(int argc, char ** argv)
 	desiredPlaybackSpec.channels = MONO;
 	desiredPlaybackSpec.samples = ABUFSIZE_SAMPLES;
 	desiredPlaybackSpec.callback = audioPlaybackCallback;
-	desiredPlaybackSpec.userdata = &cab;
+	
 
 	/* Open playback device */
 	playbackDeviceId = SDL_OpenAudioDevice( NULL, SDL_FALSE, &desiredPlaybackSpec, &gReceivedPlaybackSpec, SDL_AUDIO_ALLOW_FORMAT_CHANGE );
@@ -908,6 +931,7 @@ int main(int argc, char ** argv)
 	printf("bytesPerSample=%d, bytesPerSecond=%d, buffer byte size=%d (allocated) buffer byte size=%d (for nominal recording)", \
 			bytesPerSample, bytesPerSecond,size, bufferMaxPosition);
 	printf("\n\r *********** \n\r");
+
 
 //#define RECORD
 #ifdef RECORD
@@ -956,7 +980,7 @@ int main(int argc, char ** argv)
 	// genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */	
 	err = pthread_create(&threadid[0], &attr[0], Sound_gen, NULL);
 	if(err != 0)
-		printf("\n\r Error creating Thread [%s]", strerror(err));
+		printf("\n\r Error creating Thread genshin [%s]", strerror(err));
 	///////
 	// err=pthread_join(threadid[0], NULL);
 	// if(err != 0)
@@ -1015,7 +1039,7 @@ int main(int argc, char ** argv)
 
 		err = pthread_create(&threadid[1], &attr[1], MeasuringSpeed, NULL);
 		if(err != 0)
-			printf("\n\r Error creating Thread [%s]", strerror(err));
+			printf("\n\r Error creating Thread fft [%s]", strerror(err));
 		// err = pthread_join(threadid[2], NULL);
 		// if(err != 0)
 		// 	printf("\n\r Error creating Thread [%s]", strerror(err));
@@ -1029,7 +1053,7 @@ int main(int argc, char ** argv)
 #ifdef BEARINGISSUES
 	err = pthread_create(&threadid[2], &attr[2], BearingIssues, NULL);
 	if(err != 0)
-		printf("\n\r Error creating Thread [%s]", strerror(err));
+		printf("\n\r Error creating Thread bear-issue [%s]", strerror(err));
 	// err = pthread_join(threadid[3], NULL);
 	// if(err != 0)
 	// 	printf("\n\r Error creating Thread [%s]", strerror(err));
@@ -1066,9 +1090,20 @@ int main(int argc, char ** argv)
 	// 	SDL_UnlockAudioDevice(playbackDeviceId);
 
 	// }
+
 	err = pthread_create(&threadid[3], &attr[3], Playback, NULL);
 	if(err != 0)
-		printf("\n\r Error creating Thread [%s]", strerror(err));
+		printf("\n\r Error creating Thread playback [%s]", strerror(err));
+
+
+#define DB
+#ifdef DB
+	err = pthread_create(&threadid[4], &attr[4], dbPrint, NULL);
+	if(err != 0){
+		printf("\n\r Error creating Thread databse [%s]", strerror(err));
+	}
+#endif
+
 	// err=pthread_join(threadid[4], NULL);
 	// if(err != 0)
 	// 	printf("\n\r Error joining Thread [%s]", strerror(err));

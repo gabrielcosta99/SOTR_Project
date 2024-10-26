@@ -1,6 +1,6 @@
 [x] Criar Real-Time Database 
 [x] Criar uma thread que dá print aos dados da Real-Time Database
-[] Ver as prioridades para cada thread
-[] Ver a periodicidade de cada thread
+[x] Ver as prioridades para cada thread
+[x] Ver a periodicidade de cada thread
 [] Criar mais threads
-[] Converter a frequencia do motor em rotações por minuto
+[x] Converter a frequencia do motor em rotações por minuto

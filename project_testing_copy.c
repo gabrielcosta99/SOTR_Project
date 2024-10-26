@@ -49,6 +49,25 @@
 #define MOTOR_FREQS_SIZE 100
 #define VARIANCE 5
 
+//Periodicies:
+#define SOUND_GEN_PERIOD_NS (200 * 1000 * 1000)  // 200ms in nanoseconds
+#define SOUND_GEN_PERIOD_S (3)                   // 0 seconds
+#define MEASURING_SPEED_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define MEASURING_SPEED_PERIOD_S (3)                   // 0 seconds
+#define BEARING_ISSUES_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define BEARING_ISSUES_PERIOD_S (3)                   // 0 seconds
+#define PLAYBACK_PERIOD_NS (1000 * 1000 * 1000)  // 1s in nanoseconds
+#define PLAYBACK_PERIOD_S (4)                   // 0 seconds
+#define DB_PRINT_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define DB_PRINT_PERIOD_S (4)                   // 0 seconds
+
+// Priorities
+#define SOUND_GEN_PRIORITY 1
+#define MEASURING_SPEED_PRIORITY 2
+#define BEARING_ISSUES_PRIORITY 3
+#define PLAYBACK_PRIORITY 4
+#define DB_PRINT_PRIORITY 5
+
 /* ***********************************************
 * Prototype
 * ***********************************************/
@@ -191,7 +210,7 @@ typedef struct {
 	int motorFreq;
 	int bearingFreq;
 	int bearingAmplitude;
-	char *name;
+	int rpm;
 	char *description;
 	int status;
 } real_time_data_base;
@@ -470,6 +489,23 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
  * Threads 
  * ***************************************/
 
+/*
+* Periodicies:
+* 	- Sound_gen: 100ms
+* 	- MeasuringSpeed: 1s
+* 	- BearingIssues: 1s
+* 	- Playback: 1s
+* 	- dbPrint: 1s
+*
+* Priorities:
+* 	- Sound_gen: 1
+* 	- MeasuringSpeed: 2
+* 	- BearingIssues: 3
+* 	- Playback: 4
+* 	- dbPrint: 5
+*/
+
+
 // thread to print the contents of the real-time database
 void *dbPrint(){
 	usleep(THREAD_INIT_OFFSET);
@@ -480,23 +516,27 @@ void *dbPrint(){
 			tp; 		// Thread period
 
 	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S;	
+	tp.tv_nsec = DB_PRINT_PERIOD_NS;
+	tp.tv_sec = DB_PRINT_PERIOD_S;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);
 
 	while (1) {
 		/* Wait until next cycle */
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
-		clock_gettime(CLOCK_MONOTONIC, &ta);		
-		ts = TsAdd(ts,tp);	
+		clock_gettime(CLOCK_MONOTONIC, &ta);
+		ts = TsAdd(ts,tp);
+
+		// convert the motor frequency to RPM
+
 
 		printf("\nReal time DataBase:\n"
-					"faulty frequency: %d\n"
-					"motor frequency: %d\n"
-					"bearing issue frequency: %d\n"
+					"faulty frequency: %dHz\n"
+					"motor frequency: %dHz\n"
+					"rpm: %d \n"
+					"bearing issue frequency: %dHZ\n"
 					"bearing issue amplitude: %d\n\n"
-					, db.faultyFreq,db.motorFreq,db.bearingFreq,db.bearingAmplitude);
+					, db.faultyFreq,db.motorFreq,db.rpm,db.bearingFreq,db.bearingAmplitude);
 	}
 
 	
@@ -512,8 +552,8 @@ void *Sound_gen(void *arg){
 			tp; 		// Thread period
 
 	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S-2;	
+	tp.tv_nsec = SOUND_GEN_PERIOD_NS;
+	tp.tv_sec = SOUND_GEN_PERIOD_S;	
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);		
 
@@ -623,8 +663,8 @@ void *MeasuringSpeed(void *arg){
 			tp; 		// Thread period
 
 	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S;	
+	tp.tv_nsec = MEASURING_SPEED_PERIOD_NS;
+	tp.tv_sec = MEASURING_SPEED_PERIOD_S;	
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);	
 
@@ -693,6 +733,7 @@ void *MeasuringSpeed(void *arg){
 		//printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
 		// cab.buffers[i]->users--;
 		db.motorFreq = maxAmplitudeFreq;
+		db.rpm = maxAmplitudeFreq * 60;
 	}
 }
 
@@ -706,8 +747,8 @@ void *BearingIssues(void *arg){
 			tp; 		// Thread period
 
 	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S;	
+	tp.tv_nsec = BEARING_ISSUES_PERIOD_NS;
+	tp.tv_sec = BEARING_ISSUES_PERIOD_S;	
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);	
 	
@@ -787,8 +828,8 @@ void *Playback(void *arg){
 			tp; 		// Thread period
 
 	/* Set absolute activation time of first instance */
-	tp.tv_nsec = PERIOD_NS;
-	tp.tv_sec = PERIOD_S;	
+	tp.tv_nsec = PLAYBACK_PERIOD_NS;
+	tp.tv_sec = PLAYBACK_PERIOD_S;	
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);	
 	while(1){
@@ -858,7 +899,7 @@ int main(int argc, char ** argv)
 	pthread_t threadid[nthreads];
 	struct sched_param parm;
 	pthread_attr_t attr[nthreads];
-	int prio[]={50,50,50,50,50};
+	int prio[]={SOUND_GEN_PRIORITY,MEASURING_SPEED_PRIORITY,BEARING_ISSUES_PRIORITY,PLAYBACK_PRIORITY,DB_PRINT_PRIORITY};
 
 
 	/* Create periodic thread/task with RT scheduling attributes*/

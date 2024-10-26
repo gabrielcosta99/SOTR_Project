@@ -46,6 +46,8 @@
 #define PERIOD_NS (100*1000*1000) 	// Period (ns component)
 #define PERIOD_S (5)				// Period (seconds component)
 #define THREAD_INIT_OFFSET 1000000	// Initial offset (i.e. delay) of rt thread
+#define MOTOR_FREQS_SIZE 100
+#define VARIANCE 5
 
 /* ***********************************************
 * Prototype
@@ -86,6 +88,7 @@ char y;
 
 SDL_AudioDeviceID playbackDeviceId = 0; 	/* Structure with ID of playback device */
 
+int possibleMotorFreqs[MOTOR_FREQS_SIZE];	// Array used to compute different motor frequencies
 
 /* ***************************************
  * CAB
@@ -390,6 +393,7 @@ void filterLP(uint32_t cof, uint32_t sampleFreq, uint8_t * buffer, uint32_t nSam
 	
 // 	return;
 // }
+
 void genSine(uint32_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer)
 {	
 	int i=0, nSamples=0;
@@ -413,6 +417,27 @@ void genSine(uint32_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer)
 	
 	return;
 }
+void genSineWithIssues(uint32_t freq, uint32_t durationMS, uint16_t amp, uint8_t *buffer) {	
+	int i=0, nSamples=0;
+	float sinArgK = 2 * M_PI * freq;					// Main motor frequency component
+	float bearingFreq = 100; 							// Frequency of bearing noise component
+	float sinArgBearing = 2 * M_PI * bearingFreq;		// Bearing noise frequency component
+
+	uint16_t * bufU16 = (uint16_t *)buffer; 	// UINT16 pointer to buffer for access sample by sample
+	
+	nSamples = ((float)durationMS / 1000) * SAMP_FREQ; 	// Compute number of samples to generate
+
+	// Generate sine wave with added bearing noise
+	for(i = 0; i < nSamples; i++) {
+		// Bearing noise amplitude varies between 0 and 20% of the main amplitude to simulate an intermittent fault
+		float bearingAmp = 0.05 * amp * ((rand() % 20) / 100.0);  
+
+		// Main motor sine wave + bearing noise sine wave
+		bufU16[i] = (uint16_t)(amp / 2 * (1 + sin((sinArgK * i) / SAMP_FREQ)) + 
+		                       bearingAmp * sin((sinArgBearing * i) / SAMP_FREQ));
+	}		
+}
+
 
 /* *************************************************************************************
  * Debug function 
@@ -497,7 +522,12 @@ void *Sound_gen(void *arg){
 	struct sched_param parm; // To get thread priority	
 
 	uint32_t max, min;
+	int newIdx, randomNum, lower, upper;
 
+	int idx = rand()%100; // create an index between 0 and 100
+	int freq = possibleMotorFreqs[idx];
+	int count = 0;
+	
 	while(1){
 		/* Wait until next cycle */
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
@@ -505,18 +535,38 @@ void *Sound_gen(void *arg){
 		ts = TsAdd(ts,tp);	
 		//printf("Task 'Sound_gen': initiating...\n");
 
-		Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
+		// values used to generate a number between -7 and 5 IF they dont exceed the upper and lower bounds of the possible values for the motor frequencies
+		if(idx >= 7)
+			lower = -7;
+		else
+			lower = -idx;
+		if(idx < MOTOR_FREQS_SIZE-5)
+			upper = 5;
+		else
+			upper = MOTOR_FREQS_SIZE-idx-1;
+		
+		// create a value to change the frequency between -7 values below or 5 values up
+		int randomNum = (rand() % (upper - lower + 1)) + lower;
+		idx = idx + randomNum;
+		// printf("lower: %d, upper: %d, idx: %d\n",lower,upper,idx);
+		freq = possibleMotorFreqs[idx]; //next frequency to generate
+		// printf("newFreq: %d\n",freq);
 
-		genSine(4000, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
-		//get max and min amplitude of the signal form the current buffer in the cab
+		Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
+		if (count <5)
+			genSine(freq, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
+		else
+			genSineWithIssues(freq, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
+
+		// get max and min amplitude of the signal form the current buffer in the cab
 		getMaxMinU16(tempBuffer, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
-		//printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
+		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
 
 		filterLP(1000, SAMP_FREQ, tempBuffer, cab.buffer_size/sizeof(uint16_t));
 		CAB_write(&cab, tempBuffer, cab.buffer_size);  // Write the sound data to the CAB
 		free(tempBuffer);
 
-		
+		count++;
 	}
 	
 
@@ -799,7 +849,10 @@ int main(int argc, char ** argv)
 	int err;
 	int nthreads = 5;
 	
-	
+	/* Initialize the array where we store the frequencies that the motor can have*/
+	for(int i= 0;i<MOTOR_FREQS_SIZE;i++){
+		possibleMotorFreqs[i]=2000+i*(3000/MOTOR_FREQS_SIZE);
+	}
 
 	/* Threads */
 	pthread_t threadid[nthreads];

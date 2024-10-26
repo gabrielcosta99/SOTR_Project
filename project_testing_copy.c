@@ -559,8 +559,8 @@ void *Sound_gen(void *arg){
 			genSineWithIssues(freq, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
 
 		// get max and min amplitude of the signal form the current buffer in the cab
-		getMaxMinU16(tempBuffer, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
-		printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
+		// getMaxMinU16(tempBuffer, cab.buffer_size/sizeof(uint16_t), &max, &min);  // getMaxMinU16(uint8_t * buffer, uint32_t nSamplesm, uint32_t max, uint32_t min)		
+		// printf("Max amplitude: = %u Min amplitude is:%u\n",max, min);
 
 		filterLP(1000, SAMP_FREQ, tempBuffer, cab.buffer_size/sizeof(uint16_t));
 		CAB_write(&cab, tempBuffer, cab.buffer_size);  // Write the sound data to the CAB

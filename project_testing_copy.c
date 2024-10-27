@@ -206,11 +206,12 @@ CAB cab;
  * Data-Base
  * ***************************************/
 typedef struct {
-	int faultyFreq;
-	int motorFreq;
-	int bearingFreq;
-	int bearingAmplitude;
-	int rpm;
+	int motorFreqIdx;
+	int motorFreq[50];
+	int rpm[50];
+	int bearingFreqIdx;
+	int bearingFreq[50];
+	int bearingAmplitude[50];
 	char *description;
 	int status;
 } real_time_data_base;
@@ -520,23 +521,63 @@ void *dbPrint(){
 	tp.tv_sec = DB_PRINT_PERIOD_S;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts = TsAdd(ts,tp);
-
+	int count = 0;
 	while (1) {
 		/* Wait until next cycle */
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
 		clock_gettime(CLOCK_MONOTONIC, &ta);
 		ts = TsAdd(ts,tp);
+		if (count == 5){
+			int initialIdx;
+			FILE *rotations = fopen("rotations.temp", "w");
+			FILE *issues = fopen("issues.temp", "w");
+			if(db.motorFreqIdx<5)
+				initialIdx = 0;
+			else
+				initialIdx = db.motorFreqIdx-5;
+			for (int i = initialIdx; i < db.motorFreqIdx; i++) {
+				fprintf(rotations, "%d %d\n", i, db.rpm[i]/1000);  // Each line: x y
+			}
 
+			if(db.bearingFreqIdx<5)
+				initialIdx = 0;
+			else
+				initialIdx = db.bearingFreqIdx-5;
+			for(int i = initialIdx; i < db.bearingFreqIdx;i++){
+				fprintf(issues, "%d %d\n", i, db.bearingFreq[i]);  // Each line: x y
+				printf("%d %d\n", i, db.bearingFreq[i]);
+			}
+
+			fclose(rotations);
+			fclose(issues);
+			// Open a pipe to Gnuplot
+			FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
+			if (gnuplotPipe) {
+				// Send commands to set up and plot both arrays on the same graph
+				fprintf(gnuplotPipe, "set title 'Plot of Two Arrays'\n");
+				fprintf(gnuplotPipe, "set xlabel 'X Values'\n");
+				fprintf(gnuplotPipe, "set ylabel 'Y Values'\n");
+				fprintf(gnuplotPipe, "plot 'rotations.temp' with lines title 'rpm/1000', \\\n");
+				fprintf(gnuplotPipe, "     'issues.temp' with lines title 'bearing issues'\n");
+				pclose(gnuplotPipe);
+			} else {
+				printf("Error: Could not open Gnuplot.\n");
+			}
+
+    
+		}
 		// convert the motor frequency to RPM
-
-
 		printf("\nReal time DataBase:\n"
-					"faulty frequency: %dHz\n"
 					"motor frequency: %dHz\n"
 					"rpm: %d \n"
-					"bearing issue frequency: %dHZ\n"
-					"bearing issue amplitude: %d\n\n"
-					, db.faultyFreq,db.motorFreq,db.rpm,db.bearingFreq,db.bearingAmplitude);
+					,db.motorFreq[db.motorFreqIdx-1],db.rpm[db.motorFreqIdx-1]);
+		if(db.bearingAmplitude[db.bearingFreqIdx-1]>0){
+			printf( "bearing issue frequency: %dHZ\n"
+					"bearing issue amplitude: %d\n"
+					,db.bearingFreq[db.bearingFreqIdx-1],db.bearingAmplitude[db.bearingFreqIdx-1]);
+			printf("Detected a problem with the motor!\n\n");
+		}
+		count=(count+1)%6;
 	}
 
 	
@@ -732,8 +773,15 @@ void *MeasuringSpeed(void *arg){
 		}
 		//printf("Max amplitude %f at frequency %f\n",maxAmplitude,maxAmplitudeFreq);
 		// cab.buffers[i]->users--;
-		db.motorFreq = maxAmplitudeFreq;
-		db.rpm = maxAmplitudeFreq * 60;
+		if(db.motorFreqIdx==50){
+			for(int i=0; i<25;i++){
+				db.motorFreq[i]=db.motorFreq[i+25];
+			}
+			db.motorFreqIdx=25;
+		}
+		db.motorFreq[db.motorFreqIdx] = maxAmplitudeFreq;
+		db.rpm[db.motorFreqIdx] = maxAmplitudeFreq * 60;
+		db.motorFreqIdx++;
 	}
 }
 
@@ -805,11 +853,17 @@ void *BearingIssues(void *arg){
 				break;
 			if(Ak[k] > 0.2*maxAmplitude){
 				//printf("Bearing issue detected at %f with amplitude: %f with maxAmplitude: %f\n",fk[k],Ak[k],maxAmplitude);
-				db.bearingFreq = fk[k];
-				db.bearingAmplitude = Ak[k];
+				db.bearingFreq[db.bearingFreqIdx] = fk[k];
+				db.bearingAmplitude[db.bearingFreqIdx] = Ak[k];
 			}
 		}
-		
+		if(db.bearingFreqIdx==50){
+			for(int i=0; i<25;i++){
+				db.bearingFreq[i]=db.bearingFreq[i+25];
+			}
+			db.bearingFreqIdx=25;
+		}
+		db.bearingFreqIdx++;
 		free(x);
 		free(fk);
 		free(Ak);

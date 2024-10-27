@@ -4,3 +4,6 @@
 [x] Ver a periodicidade de cada thread
 [] Criar mais threads
 [x] Converter a frequencia do motor em rotações por minuto
+[x] Arranjar uma maneira de mostrar o estado do sistema (para isso, posso criar uma lista de valores para cada variavel
+da db e depoi ponho tudo num grafico. Os bearing issues como vao ser calculados menos frequentemente,
+ponho-os no grafico com uma periodicidade equivalente a 5x a do measuring speed por exemplo)

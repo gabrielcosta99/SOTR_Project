@@ -52,13 +52,13 @@
 //Periodicies:
 #define SOUND_GEN_PERIOD_NS (200 * 1000 * 1000)  // 200ms in nanoseconds
 #define SOUND_GEN_PERIOD_S (3)                   // 0 seconds
-#define MEASURING_SPEED_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define MEASURING_SPEED_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
 #define MEASURING_SPEED_PERIOD_S (3)                   // 0 seconds
-#define BEARING_ISSUES_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define BEARING_ISSUES_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
 #define BEARING_ISSUES_PERIOD_S (3)                   // 0 seconds
-#define PLAYBACK_PERIOD_NS (1000 * 1000 * 1000)  // 1s in nanoseconds
+#define PLAYBACK_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
 #define PLAYBACK_PERIOD_S (4)                   // 0 seconds
-#define DB_PRINT_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
+#define DB_PRINT_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
 #define DB_PRINT_PERIOD_S (4)                   // 0 seconds
 
 // Priorities
@@ -449,13 +449,25 @@ void genSineWithIssues(uint32_t freq, uint32_t durationMS, uint16_t amp, uint8_t
 
 	// Generate sine wave with added bearing noise
 	for(i = 0; i < nSamples; i++) {
+
 		// Bearing noise amplitude varies between 0 and 20% of the main amplitude to simulate an intermittent fault
 		float bearingAmp = 0.05 * amp * ((rand() % 20) / 100.0);  
-
 		// Main motor sine wave + bearing noise sine wave
 		bufU16[i] = (uint16_t)(amp / 2 * (1 + sin((sinArgK * i) / SAMP_FREQ)) + 
 		                       bearingAmp * sin((sinArgBearing * i) / SAMP_FREQ));
 	}		
+}
+
+void generateSimulatedAudio(Uint8 *buffer, int bufferSize, int micNum, float delayInSeconds, int sampleRate) {
+    // Simulate time delay by adding silence at the beginning of the buffer
+    int delaySamples = delayInSeconds * sampleRate;
+    for (int i = 0; i < bufferSize; i++) {
+        if (i < delaySamples) {
+            buffer[i] = 0;  // Silence for the delay
+        } else {
+            buffer[i] = sin(2 * M_PI * 440 * (i - delaySamples) / sampleRate) * 127;  // Example sine wave
+        }
+    }
 }
 
 
@@ -508,80 +520,149 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
 
 
 // thread to print the contents of the real-time database
+// Global variable to store the Gnuplot pipe
+
 void *dbPrint(){
-	usleep(THREAD_INIT_OFFSET);
-	struct timespec ts, // thread next activation time (absolute)
-			ta, 		// activation time of current thread activation (absolute)
-			tit, 		// thread time from last execution,
-			ta_ant, 	// activation time of last instance (absolute),
-			tp; 		// Thread period
+    usleep(THREAD_INIT_OFFSET);
+    struct timespec ts, // thread next activation time (absolute)
+            ta,         // activation time of current thread activation (absolute)
+            tit,        // thread time from last execution,
+            ta_ant,     // activation time of last instance (absolute),
+            tp;         // Thread period
 
-	/* Set absolute activation time of first instance */
-	tp.tv_nsec = DB_PRINT_PERIOD_NS;
-	tp.tv_sec = DB_PRINT_PERIOD_S;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	ts = TsAdd(ts,tp);
-	int count = 0;
-	while (1) {
-		/* Wait until next cycle */
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
-		clock_gettime(CLOCK_MONOTONIC, &ta);
-		ts = TsAdd(ts,tp);
-		if (count == 5){
-			int initialIdx;
-			FILE *rotations = fopen("rotations.temp", "w");
-			FILE *issues = fopen("issues.temp", "w");
-			if(db.motorFreqIdx<5)
-				initialIdx = 0;
-			else
-				initialIdx = db.motorFreqIdx-5;
-			for (int i = initialIdx; i < db.motorFreqIdx; i++) {
-				fprintf(rotations, "%d %d\n", i, db.rpm[i]/1000);  // Each line: x y
-			}
+    /* Set absolute activation time of first instance */
+    tp.tv_nsec = DB_PRINT_PERIOD_NS;
+    tp.tv_sec = DB_PRINT_PERIOD_S;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ts = TsAdd(ts,tp);
+    int count = 0;
 
-			if(db.bearingFreqIdx<5)
-				initialIdx = 0;
-			else
-				initialIdx = db.bearingFreqIdx-5;
-			for(int i = initialIdx; i < db.bearingFreqIdx;i++){
-				fprintf(issues, "%d %d\n", i, db.bearingFreq[i]);  // Each line: x y
-				printf("%d %d\n", i, db.bearingFreq[i]);
-			}
-
-			fclose(rotations);
-			fclose(issues);
-			// Open a pipe to Gnuplot
-			FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
-			if (gnuplotPipe) {
-				// Send commands to set up and plot both arrays on the same graph
-				fprintf(gnuplotPipe, "set title 'Plot of Two Arrays'\n");
-				fprintf(gnuplotPipe, "set xlabel 'X Values'\n");
-				fprintf(gnuplotPipe, "set ylabel 'Y Values'\n");
-				fprintf(gnuplotPipe, "plot 'rotations.temp' with lines title 'rpm/1000', \\\n");
-				fprintf(gnuplotPipe, "     'issues.temp' with lines title 'bearing issues'\n");
-				pclose(gnuplotPipe);
-			} else {
-				printf("Error: Could not open Gnuplot.\n");
-			}
-
-    
-		}
-		// convert the motor frequency to RPM
-		printf("\nReal time DataBase:\n"
-					"motor frequency: %dHz\n"
-					"rpm: %d \n"
-					,db.motorFreq[db.motorFreqIdx-1],db.rpm[db.motorFreqIdx-1]);
-		if(db.bearingAmplitude[db.bearingFreqIdx-1]>0){
-			printf( "bearing issue frequency: %dHZ\n"
-					"bearing issue amplitude: %d\n"
-					,db.bearingFreq[db.bearingFreqIdx-1],db.bearingAmplitude[db.bearingFreqIdx-1]);
-			printf("Detected a problem with the motor!\n\n");
-		}
-		count=(count+1)%6;
+    // Open a pipe to Gnuplot only once
+	FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
+	if (gnuplotPipe) {
+		// Set the Gnuplot window and axis labels
+		fprintf(gnuplotPipe, "set title 'Real-time RPM and Bearing Issues'\n");
+		fprintf(gnuplotPipe, "set xlabel 'Time (s)'\n");
+		fprintf(gnuplotPipe, "set ylabel 'RPM / Bearing Issues'\n");
+		fprintf(gnuplotPipe, "set yrange [0:]\n");  // Adjust Y range as needed
+		fflush(gnuplotPipe);  // Ensure Gnuplot processes the commands
+	} else {
+		printf("Error: Could not open Gnuplot.\n");
+		return NULL;
 	}
 
-	
+    while (1) {
+        /* Wait until next cycle */
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
+        clock_gettime(CLOCK_MONOTONIC, &ta);
+        ts = TsAdd(ts,tp);
+        if (count == 2){
+            int initialIdx;
+            FILE *rotations = fopen("rotations.temp", "w");
+            FILE *issues = fopen("issues.temp", "w");
+            if(db.motorFreqIdx<5)
+                initialIdx = 0;
+            else
+                initialIdx = db.motorFreqIdx-5;
+            for (int i = initialIdx; i < db.motorFreqIdx; i++) {
+                fprintf(rotations, "%d %d\n", i, db.rpm[i]/1000);  // Each line: x y
+            }
+
+            if(db.bearingFreqIdx<5)
+                initialIdx = 0;
+            else
+                initialIdx = db.bearingFreqIdx-5;
+            for(int i = initialIdx; i < db.bearingFreqIdx;i++){
+                fprintf(issues, "%d %d\n", i, db.bearingFreq[i]);  // Each line: x y
+                printf("%d %d\n", i, db.bearingFreq[i]);
+            }
+
+            fclose(rotations);
+            fclose(issues);
+
+            // Update the plot by sending new data and refreshing the plot in Gnuplot
+            if (gnuplotPipe) {
+                fprintf(gnuplotPipe, "plot 'rotations.temp' with lines title 'rpm/1000', \\\n");
+                fprintf(gnuplotPipe, "     'issues.temp' with lines title 'bearing issues'\n");
+                fprintf(gnuplotPipe, "pause 1\n"); // Pause for 1 second between updates
+                fflush(gnuplotPipe); // Ensure the new data is flushed to Gnuplot
+            }
+        }
+
+        // Print real-time database contents
+        printf("\nReal time DataBase:\n"
+                    "motor frequency: %dHz\n"
+                    "rpm: %d \n"
+                    ,db.motorFreq[db.motorFreqIdx-1],db.rpm[db.motorFreqIdx-1]);
+        if(db.bearingAmplitude[db.bearingFreqIdx-1]>0){
+            printf( "bearing issue frequency: %dHZ\n"
+                    "bearing issue amplitude: %d\n"
+                    ,db.bearingFreq[db.bearingFreqIdx-1],db.bearingAmplitude[db.bearingFreqIdx-1]);
+            printf("Detected a problem with the motor!\n\n");
+        }
+        count=(count+1)%3;
+    }
 }
+
+// recording thread
+//void *recording(void *arg){
+//	/* Delays theread execution start to prevent output of main() and thread to get garbled */
+//	usleep(THREAD_INIT_OFFSET);
+//	/* Timespec variables to manage time */
+//	struct timespec ts, // thread next activation time (absolute)
+//			ta, 		// activation time of current thread activation (absolute)
+//			tit, 		// thread time from last execution,
+//			ta_ant, 	// activation time of last instance (absolute),
+//			tp; 		// Thread period
+//
+//	/* Set absolute activation time of first instance */
+//	tp.tv_nsec = SOUND_GEN_PERIOD_NS;
+//	tp.tv_sec = SOUND_GEN_PERIOD_S;	
+//	clock_gettime(CLOCK_MONOTONIC, &ts);
+//	ts = TsAdd(ts,tp);	
+//
+//	/* Other variables */
+//	int policy;    // To obtain scheduling policy
+//	struct sched_param parm; // To get thread priority
+//
+//	SDL_AudioDeviceID recordingDeviceId = *((SDL_AudioDeviceID*) arg);
+//
+//    printf("Recording thread started\n");
+//	Uint8 *tempBuffer = (Uint8 *)malloc(cab.buffer_size);  // Temporary buffer for each recording chunk
+//
+//    /* After being open devices have callback processing blocked (paused_on active), to allow configuration without glitches */
+//    /* Devices must be unpaused to allow callback processing */
+//    SDL_PauseAudioDevice(recordingDeviceId, SDL_FALSE);  /* Args are SDL device id and pause_on */
+//
+//    /* Wait until recording buffer is full */
+//    while(1)
+//    {
+//        /* Lock callback. Prevents the following code from competing with callback function */
+//        SDL_LockAudioDevice(recordingDeviceId);
+//
+//        /* Receiving buffer full? */
+//        if(gBufferBytePosition > cab.buffer_size){
+//            /* Stop recording audio */
+//            SDL_PauseAudioDevice(recordingDeviceId, SDL_TRUE);
+//            SDL_UnlockAudioDevice(recordingDeviceId);
+//            break;
+//        }
+//
+//		memcpy(tempBuffer, gRecordingBuffer, cab.buffer_size);
+//
+//        // Write data to the CAB
+//        CAB_write(&cab, tempBuffer, cab.buffer_size);
+//
+//
+//        /* Buffer not yet full? Keep trying ... */
+//        SDL_UnlockAudioDevice(recordingDeviceId);
+//    }
+//
+//    printf("Recording thread finished.\n");
+//    //pthread_exit(NULL);
+//
+//}
+
 
 // Sound generator thread. This is the Thread that will write in the buffer
 void *Sound_gen(void *arg){
@@ -634,7 +715,7 @@ void *Sound_gen(void *arg){
 		// printf("newFreq: %d\n",freq);
 
 		Uint8 * tempBuffer = (uint8_t *)malloc(cab.buffer_size);  // 
-		if (count <5)
+		if (count < 5)
 			genSine(freq, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
 		else
 			genSineWithIssues(freq, 1000, 30000, tempBuffer); 	/* freq, durationMS, amp, buffer */
@@ -802,6 +883,20 @@ void *BearingIssues(void *arg){
 	
 	buffer tempBuffer;
 	int count = 0;
+	FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
+	if(gnuplotPipe){
+		fprintf(gnuplotPipe, "set title 'Frequency Amplitude Spectrum'\n");
+		fprintf(gnuplotPipe, "set xlabel 'Frequency (Hz)'\n");
+		fprintf(gnuplotPipe, "set ylabel 'Amplitude'\n");
+		fprintf(gnuplotPipe, "set yrange [0:]\n");  // Set Y-axis range
+		fflush(gnuplotPipe);
+	} else {
+		printf("Error: Could not open Gnuplot.\n");
+		return NULL;
+	}
+
+		
+
 	while(1){
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
 		clock_gettime(CLOCK_MONOTONIC, &ta);		
@@ -859,26 +954,21 @@ void *BearingIssues(void *arg){
 			}
 		}
 
-		if(count == 0){
-			FILE *temp = fopen("data.temp", "w");
-			for (int i = 0; i < N/2; i++) {
-				fprintf(temp, "%f %f\n", fk[i], Ak[i]);  // Each line: x y
-			}
+		FILE *temp = fopen("data.temp", "w");
+		for (int i = 0; i < N/2; i++) {
+			fprintf(temp, "%f %f\n", fk[i], Ak[i]);  // Each line: x y
+		}
 
-			fclose(temp);
-			// Open a pipe to Gnuplot
-			FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
-			if (gnuplotPipe) {
-				// Send commands to set up and plot both arrays on the same graph
-				fprintf(gnuplotPipe, "set title 'Frequency Amplitude Spectrum'\n");
-				fprintf(gnuplotPipe, "set xlabel 'Frequency (Hz)'\n");
-				fprintf(gnuplotPipe, "set ylabel 'Amplitude'\n");
-				fprintf(gnuplotPipe, "set yrange [0:%f]\n", maxAmplitude+100);  // Set Y-axis range
-				fprintf(gnuplotPipe, "plot 'data.temp' with lines\\\n"); 
-				pclose(gnuplotPipe);
-			} else {
-				printf("Error: Could not open Gnuplot.\n");
-			}
+		fclose(temp);
+		// Open a pipe to Gnuplot
+		if (gnuplotPipe) {
+			// Send commands to set up and plot both arrays on the same graph
+			fprintf(gnuplotPipe, "set yrange [0:%f]\n",maxAmplitude+100);  // Set Y-axis range
+			fprintf(gnuplotPipe, "plot 'data.temp' with lines\n"); 
+			fprintf(gnuplotPipe, "pause 1\n"); // Add a short pause to refresh the plot
+			fflush(gnuplotPipe);
+		} else {
+			printf("Error: Could not open Gnuplot.\n");
 		}
 		
 
@@ -1113,42 +1203,10 @@ int main(int argc, char ** argv)
 //#define RECORD
 #ifdef RECORD
 
-	/* ******************************************************
-	 * All set. Time to record, process and play sounds  
-	 * ******************************************************/
-	
-	printf("Recording\n");
-	
-	/* Set index to the beginning of buffer */
-	gBufferBytePosition = 0;
+	err = pthread_create(&threadid[0], &attr[0], recording, &recordingDeviceId);
+	if(err != 0)
+		printf("\n\r Error creating Thread record [%s]", strerror(err));
 
-	/* After being open devices have callback processing blocked (paused_on active), to allow configuration without glitches */
-	/* Devices must be unpaused to allow callback processing */
-	SDL_PauseAudioDevice(recordingDeviceId, SDL_FALSE ); /* Args are SDL device id and pause_on */
-	
-	/* Wait until recording buffer full */
-	while(1)
-	{
-		/* Lock callback. Prevents the following code to not concur with callback function */
-		SDL_LockAudioDevice(recordingDeviceId);
-
-		/* Receiving buffer full? */
-		if(gBufferBytePosition > gBufferByteMaxPosition)
-		{
-			/* Stop recording audio */
-			SDL_PauseAudioDevice(recordingDeviceId, SDL_TRUE );
-			SDL_UnlockAudioDevice(recordingDeviceId );
-			break;
-		}
-
-		/* Buffer not yet full? Keep trying ... */
-		SDL_UnlockAudioDevice( recordingDeviceId );
-	}
-
-	/* *****************************************************************
-	 * Recorded data obtained. Now process it and play it back
-	 * *****************************************************************/
- 
 #endif
 
 #define GENSINE

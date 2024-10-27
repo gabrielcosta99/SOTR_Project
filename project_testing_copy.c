@@ -491,7 +491,7 @@ void getMaxMinU16(uint8_t * buffer, uint32_t nSamples, uint32_t * max, uint32_t 
  * ***************************************/
 
 /*
-* Periodicies:
+* Periodicies(3s+...):
 * 	- Sound_gen: 100ms
 * 	- MeasuringSpeed: 1s
 * 	- BearingIssues: 1s
@@ -751,7 +751,7 @@ void *MeasuringSpeed(void *arg){
 
 		/* Compute the amplitude at each frequency and print it */
 		fftGetAmplitude(x,N,SAMP_FREQ, fk,Ak);
-
+		
 		double maxAmplitude = 0.0;
 		double maxAmplitudeFreq = 0.0;
 		double minMotorFreq = 2000.0;
@@ -801,6 +801,7 @@ void *BearingIssues(void *arg){
 	ts = TsAdd(ts,tp);	
 	
 	buffer tempBuffer;
+	int count = 0;
 	while(1){
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
 		clock_gettime(CLOCK_MONOTONIC, &ta);		
@@ -857,6 +858,33 @@ void *BearingIssues(void *arg){
 				db.bearingAmplitude[db.bearingFreqIdx] = Ak[k];
 			}
 		}
+
+		if(count == 0){
+			FILE *temp = fopen("data.temp", "w");
+			for (int i = 0; i < N/2; i++) {
+				fprintf(temp, "%f %f\n", fk[i], Ak[i]);  // Each line: x y
+			}
+
+			fclose(temp);
+			// Open a pipe to Gnuplot
+			FILE *gnuplotPipe = popen("gnuplot -persistent", "w");
+			if (gnuplotPipe) {
+				// Send commands to set up and plot both arrays on the same graph
+				fprintf(gnuplotPipe, "set title 'Frequency Amplitude Spectrum'\n");
+				fprintf(gnuplotPipe, "set xlabel 'Frequency (Hz)'\n");
+				fprintf(gnuplotPipe, "set ylabel 'Amplitude'\n");
+				fprintf(gnuplotPipe, "set yrange [0:%f]\n", maxAmplitude+100);  // Set Y-axis range
+				fprintf(gnuplotPipe, "plot 'data.temp' with lines\\\n"); 
+				pclose(gnuplotPipe);
+			} else {
+				printf("Error: Could not open Gnuplot.\n");
+			}
+		}
+		
+
+
+
+
 		if(db.bearingFreqIdx==50){
 			for(int i=0; i<25;i++){
 				db.bearingFreq[i]=db.bearingFreq[i+25];
@@ -864,6 +892,7 @@ void *BearingIssues(void *arg){
 			db.bearingFreqIdx=25;
 		}
 		db.bearingFreqIdx++;
+		count = (count + 1)%3;
 		free(x);
 		free(fk);
 		free(Ak);

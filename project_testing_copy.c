@@ -55,7 +55,7 @@
 #define MEASURING_SPEED_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
 #define MEASURING_SPEED_PERIOD_S (3)                   // 0 seconds
 #define BEARING_ISSUES_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
-#define BEARING_ISSUES_PERIOD_S (3)                   // 0 seconds
+#define BEARING_ISSUES_PERIOD_S (6)                   // 0 seconds
 #define PLAYBACK_PERIOD_NS (900 * 1000 * 1000)  // 1s in nanoseconds
 #define PLAYBACK_PERIOD_S (4)                   // 0 seconds
 #define DB_PRINT_PERIOD_NS (800 * 1000 * 1000)  // 1s in nanoseconds
@@ -568,13 +568,12 @@ void *dbPrint(){
                 fprintf(rotations, "%d %d\n", i, db.rpm[i]/1000);  // Each line: x y
             }
 
-            if(db.bearingFreqIdx<5)
+            if(db.bearingFreqIdx<3)
                 initialIdx = 0;
             else
-                initialIdx = db.bearingFreqIdx-5;
+                initialIdx = db.bearingFreqIdx-3;
             for(int i = initialIdx; i < db.bearingFreqIdx;i++){
-                fprintf(issues, "%d %d\n", i, db.bearingFreq[i]);  // Each line: x y
-                printf("%d %d\n", i, db.bearingFreq[i]);
+                fprintf(issues, "%d %d\n", 2*i, db.bearingFreq[i]);  // Each line: x y
             }
 
             fclose(rotations);

@@ -543,7 +543,7 @@ void *dbPrint(){
 		// Set the Gnuplot window and axis labels
 		fprintf(gnuplotPipe, "set title 'Real-time RPM and Bearing Issues'\n");
 		fprintf(gnuplotPipe, "set xlabel 'Time (s)'\n");
-		fprintf(gnuplotPipe, "set ylabel 'RPM / Bearing Issues'\n");
+		fprintf(gnuplotPipe, "set ylabel 'RPM / Bearing Issues(Hz)'\n");
 		fprintf(gnuplotPipe, "set yrange [0:]\n");  // Adjust Y range as needed
 		fflush(gnuplotPipe);  // Ensure Gnuplot processes the commands
 	} else {
@@ -602,66 +602,6 @@ void *dbPrint(){
         count=(count+1)%3;
     }
 }
-
-// recording thread
-//void *recording(void *arg){
-//	/* Delays theread execution start to prevent output of main() and thread to get garbled */
-//	usleep(THREAD_INIT_OFFSET);
-//	/* Timespec variables to manage time */
-//	struct timespec ts, // thread next activation time (absolute)
-//			ta, 		// activation time of current thread activation (absolute)
-//			tit, 		// thread time from last execution,
-//			ta_ant, 	// activation time of last instance (absolute),
-//			tp; 		// Thread period
-//
-//	/* Set absolute activation time of first instance */
-//	tp.tv_nsec = SOUND_GEN_PERIOD_NS;
-//	tp.tv_sec = SOUND_GEN_PERIOD_S;	
-//	clock_gettime(CLOCK_MONOTONIC, &ts);
-//	ts = TsAdd(ts,tp);	
-//
-//	/* Other variables */
-//	int policy;    // To obtain scheduling policy
-//	struct sched_param parm; // To get thread priority
-//
-//	SDL_AudioDeviceID recordingDeviceId = *((SDL_AudioDeviceID*) arg);
-//
-//    printf("Recording thread started\n");
-//	Uint8 *tempBuffer = (Uint8 *)malloc(cab.buffer_size);  // Temporary buffer for each recording chunk
-//
-//    /* After being open devices have callback processing blocked (paused_on active), to allow configuration without glitches */
-//    /* Devices must be unpaused to allow callback processing */
-//    SDL_PauseAudioDevice(recordingDeviceId, SDL_FALSE);  /* Args are SDL device id and pause_on */
-//
-//    /* Wait until recording buffer is full */
-//    while(1)
-//    {
-//        /* Lock callback. Prevents the following code from competing with callback function */
-//        SDL_LockAudioDevice(recordingDeviceId);
-//
-//        /* Receiving buffer full? */
-//        if(gBufferBytePosition > cab.buffer_size){
-//            /* Stop recording audio */
-//            SDL_PauseAudioDevice(recordingDeviceId, SDL_TRUE);
-//            SDL_UnlockAudioDevice(recordingDeviceId);
-//            break;
-//        }
-//
-//		memcpy(tempBuffer, gRecordingBuffer, cab.buffer_size);
-//
-//        // Write data to the CAB
-//        CAB_write(&cab, tempBuffer, cab.buffer_size);
-//
-//
-//        /* Buffer not yet full? Keep trying ... */
-//        SDL_UnlockAudioDevice(recordingDeviceId);
-//    }
-//
-//    printf("Recording thread finished.\n");
-//    //pthread_exit(NULL);
-//
-//}
-
 
 // Sound generator thread. This is the Thread that will write in the buffer
 void *Sound_gen(void *arg){
@@ -734,45 +674,6 @@ void *Sound_gen(void *arg){
 	return NULL;
 }
 
-// void *LPFilter(void *arg){
-// 	/* Delays theread execution start to prevent output of main() and thread to get garbled */
-// 	usleep(THREAD_INIT_OFFSET);
-// 	/* Timespec variables to manage time */
-// 	struct timespec ts, // thread next activation time (absolute)
-// 			ta, 		// activation time of current thread activation (absolute)
-// 			tit, 		// thread time from last execution,
-// 			ta_ant, 	// activation time of last instance (absolute),
-// 			tp; 		// Thread period
-
-// 	/* Set absolute activation time of first instance */
-// 	tp.tv_nsec = PERIOD_NS;
-// 	tp.tv_sec = PERIOD_S-1;	
-// 	clock_gettime(CLOCK_MONOTONIC, &ts);
-// 	ts = TsAdd(ts,tp);		
-
-// 	int policy;    // To obtain scheduling policy
-// 	struct sched_param parm; // To get thread priority
-// 	buffer tempBuffer;
-	
-// 	while(1){
-// 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,&ts,NULL);
-// 		clock_gettime(CLOCK_MONOTONIC, &ta);		
-// 		ts = TsAdd(ts,tp);	
-// 		printf("\n Applying LP filter \n");
-				
-// 		// TODO memcopy não esta a funcionar
-
-// 		// int i = cab.current_index;
-// 		// cab.buffers[i]->users++;
-// 		// filterLP(1000, SAMP_FREQ, cab.buffers[i]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter 
-// 		// cab.buffers[i]->users--; // Decrement the user count after reading
-
-		
-// 		CAB_read(&cab,&tempBuffer,0);
-// 		filterLP(1000, SAMP_FREQ, cab.buffers[0]->data, cab.buffer_size/sizeof(uint16_t));  // Apply the LP filter
-// 	} 
-// }
-
 void *MeasuringSpeed(void *arg){
 	/* Delays theread execution start to prevent output of main() and thread to get garbled */
 	usleep(THREAD_INIT_OFFSET);
@@ -837,8 +738,7 @@ void *MeasuringSpeed(void *arg){
 		/* Compute FFT */
 		fftCompute(x, N);
 
-		//printf("\nFFT result:\n");/		
-		//printComplexArray(x, N);
+
 
 		/* Compute the amplitude at each frequency and print it */
 		fftGetAmplitude(x,N,SAMP_FREQ, fk,Ak);
@@ -1001,9 +901,6 @@ void *Playback(void *arg){
 		clock_gettime(CLOCK_MONOTONIC, &ta);		
 		ts = TsAdd(ts,tp);	
 
-
-		printf("Playback\n");
-			
 		/* Reset buffer index to the beginning */
 		// gBufferBytePosition = 0;
 		int i = cab.current_index;
@@ -1202,16 +1099,10 @@ int main(int argc, char ** argv)
 
 #define GENSINE
 #ifdef GENSINE
-	// printf("\n Generating a sine wave \n");
-	// genSineU16(1000, 1000, 30000, gRecordingBuffer); 	/* freq, durationMS, amp, buffer */	
 	err = pthread_create(&threadid[0], &attr[0], Sound_gen, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread genshin [%s]", strerror(err));
-	///////
-	// err=pthread_join(threadid[0], NULL);
-	// if(err != 0)
-	// 	printf("\n\r Error joining Thread [%s]", strerror(err));
-	///////
+
 #endif
 
 //#define ADDECHO
@@ -1247,30 +1138,12 @@ int main(int argc, char ** argv)
 	}
 #endif	
 
-#define LPFILTER
-#ifdef LPFILTER
-	/* Apply LP filter */
-	/* Args are cutoff freq, sampling freq, buffer and # of samples in the buffer */
-	// err = pthread_create(&threadid[1], &attr[1], LPFilter, NULL);
-	// if(err != 0)
-	// 	printf("\n\r Error creating Thread [%s]", strerror(err));
-	// err=pthread_join(threadid[1], NULL);
-	// if(err != 0)
-	// 	printf("\n\r Error joining Thread [%s]", strerror(err));
-#endif
-
 #define FFT
 #ifdef FFT
 	{		
-
 		err = pthread_create(&threadid[1], &attr[1], MeasuringSpeed, NULL);
 		if(err != 0)
 			printf("\n\r Error creating Thread fft [%s]", strerror(err));
-		// err = pthread_join(threadid[2], NULL);
-		// if(err != 0)
-		// 	printf("\n\r Error creating Thread [%s]", strerror(err));
-
-		
 	}
 	
 #endif
@@ -1280,43 +1153,8 @@ int main(int argc, char ** argv)
 	err = pthread_create(&threadid[2], &attr[2], BearingIssues, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread bear-issue [%s]", strerror(err));
-	// err = pthread_join(threadid[3], NULL);
-	// if(err != 0)
-	// 	printf("\n\r Error creating Thread [%s]", strerror(err));
 #endif
 	
-	/* *****************************************************************
-	 * Recorded/generated data obtained. Now play it back
-	 * *****************************************************************/
-	// printf("Playback\n");
-		
-	// /* Reset buffer index to the beginning */
-	// // gBufferBytePosition = 0;
-	// int i = cab.current_index;
-	// cab.buffers[i]->position = 0;
-
-	// /* Enable processing of callbacks by playback device (required after opening) */
-	// SDL_PauseAudioDevice(playbackDeviceId, SDL_FALSE);
-
-	// /* Play buffer */
-	// while(1)
-	// {
-	// 	/* Lock callback */
-	// 	SDL_LockAudioDevice(playbackDeviceId);
-
-	// 	/* Playback is finished? */
-	// 	if(cab.buffers[i]->position > bufferMaxPosition)
-	// 	{
-	// 		/* Stop playing audio */
-	// 		SDL_PauseAudioDevice(playbackDeviceId, SDL_TRUE);
-	// 		SDL_UnlockAudioDevice(playbackDeviceId);
-	// 		break;
-	// 	}
-	// 	/* Unlock callback and try again ...*/
-	// 	SDL_UnlockAudioDevice(playbackDeviceId);
-
-	// }
-
 	err = pthread_create(&threadid[3], &attr[3], Playback, NULL);
 	if(err != 0)
 		printf("\n\r Error creating Thread playback [%s]", strerror(err));
@@ -1330,10 +1168,6 @@ int main(int argc, char ** argv)
 	}
 #endif
 
-	// err=pthread_join(threadid[4], NULL);
-	// if(err != 0)
-	// 	printf("\n\r Error joining Thread [%s]", strerror(err));
-
 	/* *******************************************
 	 * All done! Release resources and terminate
 	 * *******************************************/
@@ -1346,12 +1180,6 @@ int main(int argc, char ** argv)
 
 	// SDL_Quit();
 	while (1);
-	// for(int i=0;i<nthreads;i++){
-	// 	err = pthread_join(threadid[i], NULL);
-	// 	if(err != 0)
-	// 		printf("\n\r Error creating Thread [%s]", strerror(err));
-	// }
-	
 	return 0;
 }
 

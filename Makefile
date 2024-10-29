@@ -6,8 +6,8 @@ LDFLAGS = $(shell $(SDL2_CONFIG) --libs)
 LDFLAGS += -lm  
 CFLAGS += -g
 
-TARGET = project_testing_copy
-OBJECTS = project_testing_copy.o ./fft/fft.o
+TARGET = project
+OBJECTS = project.o ./fft/fft.o
 
 # TARGET = simpleRecPlay
 # OBJECTS = simpleRecPlay.o ./fft/fft.o
